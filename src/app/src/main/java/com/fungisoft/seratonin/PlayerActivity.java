@@ -3,6 +3,10 @@ package com.fungisoft.seratonin;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.core.widget.ImageViewCompat;
 import androidx.palette.graphics.Palette;
 
@@ -25,9 +29,6 @@ import android.os.IBinder;
 import androidx.preference.PreferenceManager;
 
 import android.view.View;
-import android.view.Window;
-import android.view.WindowInsetsController;
-import android.view.WindowManager;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.ImageView;
@@ -39,7 +40,6 @@ import com.bumptech.glide.Glide;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import java.util.ArrayList;
-import java.util.Objects;
 import java.util.Random;
 
 import static com.fungisoft.seratonin.AlbumDetailsAdapter.albumFiles;
@@ -66,12 +66,18 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Request no title before setContentView
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        // Enable edge-to-edge display
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_player);
-        // Apply full screen after content view is set (DecorView exists)
-        setFullScreen();
-        Objects.requireNonNull(getSupportActionBar()).hide();
+        
+        // Apply window insets for proper padding
+        ConstraintLayout mContainer = findViewById(R.id.mContainer);
+        ViewCompat.setOnApplyWindowInsetsListener(mContainer, (v, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(insets.left, insets.top, insets.right, insets.bottom);
+            return WindowInsetsCompat.CONSUMED;
+        });
+        
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getBaseContext());
         SharedPreferences.Editor editor = prefs.edit();
         editor.putBoolean("playerActivitypass", true);
@@ -161,19 +167,6 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                 finish();
             }
         });
-    }
-
-    private void setFullScreen() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            getWindow().setDecorFitsSystemWindows(false);
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.hide(android.view.WindowInsets.Type.statusBars() | android.view.WindowInsets.Type.navigationBars());
-                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
-        } else {
-            getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        }
     }
 
     @Override
@@ -529,6 +522,46 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     private void getIntenMethod() {
         String sender = getIntent().getStringExtra("sender");
         String musicAdapt = getIntent().getStringExtra("musicAdapter");
+        
+        // Coming from now playing bar - use existing service state
+        if (sender != null && sender.equals("nowPlayingBar")) {
+            // Get position from intent (passed from NowPlayingFragmentBottom)
+            int servicePosition = getIntent().getIntExtra("servicePosition", -1);
+            
+            if (passMusicService != null && passMusicService.musicFiles != null 
+                    && passMusicService.position >= 0 
+                    && passMusicService.position < passMusicService.musicFiles.size()) {
+                position = passMusicService.position;
+                listSongs = passMusicService.musicFiles;
+            } else if (mFiles != null && servicePosition >= 0 && servicePosition < mFiles.size()) {
+                // Fallback to mFiles with the passed position
+                position = servicePosition;
+                listSongs = mFiles;
+            } else if (mFiles != null && MusicService.passPosition >= 0 && MusicService.passPosition < mFiles.size()) {
+                // Last resort - use static passPosition from MusicService
+                position = MusicService.passPosition;
+                listSongs = mFiles;
+            } else {
+                // All fallbacks failed - cannot proceed
+                finish();
+                return;
+            }
+            
+            uri = Uri.parse(listSongs.get(position).getPath());
+            // Update play/pause button state
+            if (passMusicService != null && passMusicService.isPlaying()) {
+                playPauseBtn.setImageResource(R.drawable.ic_pause);
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+            } else {
+                playPauseBtn.setImageResource(R.drawable.ic_play);
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
+            }
+            // Don't restart the service, just bind to it
+            Intent intent = new Intent(this, MusicService.class);
+            bindService(intent, this, BIND_AUTO_CREATE);
+            return;
+        }
+        
         if (sender != null && sender.equals("albumDetails")){
             position = getIntent().getIntExtra("positionAlbum",-1);
             listSongs = albumFiles;
@@ -537,12 +570,17 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
             position = getIntent().getIntExtra("positionMfiles",-1);
             listSongs = mFiles;
         }
-        if(listSongs != null)
-        {
-            NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
-            playPauseBtn.setImageResource(R.drawable.ic_pause);
-            uri = Uri.parse(listSongs.get(position).getPath());
+        
+        // Validate position before accessing list
+        if (listSongs == null || position < 0 || position >= listSongs.size()) {
+            // Cannot proceed without valid position - finish activity
+            finish();
+            return;
         }
+        
+        NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+        playPauseBtn.setImageResource(R.drawable.ic_pause);
+        uri = Uri.parse(listSongs.get(position).getPath());
 
 
         //HERE IT IS!!
@@ -749,14 +787,47 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         MusicService.MyBinder myBinder = (MusicService.MyBinder) service;
         musicService = myBinder.getService();
         musicService.setCallBack(this);
-//        Toast.makeText(this, "Connected" + musicService + "7777777777777777", Toast.LENGTH_SHORT).show();
-        seekBar.setMax(musicService.getDuration() / 1000);
-        metaData(uri);
-        song_name.setText(listSongs.get(position).getTitle());
-        artist_name.setText(listSongs.get(position).getArtist());
-        album_name.setText(listSongs.get(position).getAlbum());
-        musicService.OnCompleted();
-        musicService.showNotification(R.drawable.ic_pause);
+        
+        // Sync position and listSongs from the service if available
+        if (musicService.musicFiles != null && !musicService.musicFiles.isEmpty()) {
+            listSongs = musicService.musicFiles;
+            if (musicService.position >= 0 && musicService.position < listSongs.size()) {
+                position = musicService.position;
+                uri = Uri.parse(listSongs.get(position).getPath());
+            }
+        }
+        
+        // Check if mediaPlayer is ready before getting duration
+        int duration = musicService.getDuration();
+        if (duration > 0) {
+            seekBar.setMax(duration / 1000);
+        }
+        
+        // Update UI with current song info only if we have valid data
+        if (listSongs != null && position >= 0 && position < listSongs.size()) {
+            metaData(uri);
+            song_name.setText(listSongs.get(position).getTitle());
+            artist_name.setText(listSongs.get(position).getArtist());
+            album_name.setText(listSongs.get(position).getAlbum());
+            
+            // Update NowPlayingFragmentBottom
+            NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
+            NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
+            
+            // Update play/pause button based on actual playback state
+            if (musicService.isPlaying()) {
+                playPauseBtn.setImageResource(R.drawable.ic_pause);
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+                musicService.showNotification(R.drawable.ic_pause);
+            } else {
+                playPauseBtn.setImageResource(R.drawable.ic_play);
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
+                musicService.showNotification(R.drawable.ic_play);
+            }
+            
+            musicService.OnCompleted();
+        }
+        
         passMusicService = musicService;
     }
 

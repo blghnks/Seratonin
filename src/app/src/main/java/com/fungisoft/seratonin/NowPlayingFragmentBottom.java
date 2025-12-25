@@ -167,12 +167,16 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
 //                }
         });
 
-        view.setOnClickListener(v -> {
-
-//                Toast.makeText(musicService, "Tap on MiniPlayer", Toast.LENGTH_SHORT).show();
-//                Intent albumIntent = new Intent(getContext(), PlayerActivity.class);
-//                albumIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-//                startActivity(albumIntent);
+        bottom_bac_frag.setOnClickListener(v -> {
+            Intent playerIntent = new Intent(getContext(), PlayerActivity.class);
+            playerIntent.putExtra("sender", "nowPlayingBar");
+            // Pass the current position from the service
+            if (musicService != null) {
+                playerIntent.putExtra("servicePosition", musicService.position);
+            } else {
+                playerIntent.putExtra("servicePosition", MusicService.passPosition);
+            }
+            startActivity(playerIntent);
         });
         return view;
     }

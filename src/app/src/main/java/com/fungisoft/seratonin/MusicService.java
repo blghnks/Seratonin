@@ -123,36 +123,61 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
             } catch (NullPointerException e) {
                 System.err.println("Null pointer exception");
             }
-            mediaPlayer.start();
+            if (mediaPlayer != null) {
+                mediaPlayer.start();
+            }
         }
     }
 
     void start() {
-        mediaPlayer.start();
+        if (mediaPlayer != null) {
+            mediaPlayer.start();
+        }
     }
 
     boolean isPlaying(){
-        return mediaPlayer.isPlaying();
+        if (mediaPlayer != null) {
+            return mediaPlayer.isPlaying();
+        }
+        return false;
     }
 
     void stop(){
-        mediaPlayer.stop();
+        if (mediaPlayer != null) {
+            mediaPlayer.stop();
+        }
+    }
+
+    void pause(){
+        if (mediaPlayer != null) {
+            mediaPlayer.pause();
+        }
     }
 
     void release(){
-        mediaPlayer.release();
+        if (mediaPlayer != null) {
+            mediaPlayer.release();
+        }
     }
 
     int getDuration(){
-        return mediaPlayer.getDuration();
+        if (mediaPlayer != null) {
+            return mediaPlayer.getDuration();
+        }
+        return 0;
     }
 
     void seekTo(int position){
-        mediaPlayer.seekTo(position);
+        if (mediaPlayer != null) {
+            mediaPlayer.seekTo(position);
+        }
     }
 
     int getCurrentPosition(){
-        return mediaPlayer.getCurrentPosition();
+        if (mediaPlayer != null) {
+            return mediaPlayer.getCurrentPosition();
+        }
+        return 0;
     }
 
     void createMediaPlayer(int positionInner){
@@ -171,12 +196,10 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
         mediaPlayer = MediaPlayer.create(getBaseContext(), uri);
     }
 
-    void pause(){
-        mediaPlayer.pause();
-    }
-
     void OnCompleted(){
-        mediaPlayer.setOnCompletionListener(this);
+        if (mediaPlayer != null) {
+            mediaPlayer.setOnCompletionListener(this);
+        }
     }
 
     @Override
@@ -196,6 +219,11 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
     }
 
     void showNotification(int playPauseBtn){
+        // Check if we have valid data before showing notification
+        if (musicFiles == null || musicFiles.isEmpty() || position < 0 || position >= musicFiles.size()) {
+            return;
+        }
+        
         Intent intent = new Intent(this, MainActivity.class);
         PendingIntent contentIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
 
