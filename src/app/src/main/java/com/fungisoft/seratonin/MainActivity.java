@@ -13,9 +13,9 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
-import androidx.fragment.app.FragmentManager;
-import androidx.fragment.app.FragmentPagerAdapter;
-import androidx.viewpager.widget.ViewPager;
+import androidx.fragment.app.FragmentActivity;
+import androidx.viewpager2.adapter.FragmentStateAdapter;
+import androidx.viewpager2.widget.ViewPager2;
 
 import android.Manifest;
 import android.app.Activity;
@@ -127,49 +127,48 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     }
 
     private void initViewPager() {
-        ViewPager viewPager = findViewById(R.id.viewpager);
+        ViewPager2 viewPager = findViewById(R.id.viewpager);
         TabLayout tabLayout = findViewById(R.id.tab_layout);
-        ViewPagerAdapter  viewPagerAdapter = new ViewPagerAdapter(getSupportFragmentManager());
-        viewPagerAdapter.addFragments(new SongsFragment(), "Songs");
+        ViewPagerAdapter viewPagerAdapter = new ViewPagerAdapter(this);
+        viewPagerAdapter.addFragments(new ArtistsFragment(), "Artists");
         viewPagerAdapter.addFragments(new AlbumFragment(), "Albums");
+        viewPagerAdapter.addFragments(new SongsFragment(), "Songs");
         viewPager.setAdapter(viewPagerAdapter);
-        tabLayout.setupWithViewPager(viewPager);
+        // Keep all 3 tabs in memory for smooth transitions
+        viewPager.setOffscreenPageLimit(2);
+        // Use TabLayoutMediator for ViewPager2
+        new com.google.android.material.tabs.TabLayoutMediator(tabLayout, viewPager,
+                (tab, position) -> tab.setText(viewPagerAdapter.getTitle(position))
+        ).attach();
     }
 
-    public static class ViewPagerAdapter extends FragmentPagerAdapter {
+    public static class ViewPagerAdapter extends FragmentStateAdapter {
 
-        private ArrayList<Fragment> fragments;
-        private ArrayList<String> titles;
-//        public ViewPagerAdapter(@NonNull @org.jetbrains.annotations.NotNull FragmentManager fm) {
-        public ViewPagerAdapter(@NonNull @org.jetbrains.annotations.NotNull FragmentManager fm) {
-            super(fm, BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT);
-            this.fragments = new ArrayList<>();
-            this.titles = new ArrayList<>();
+        private final ArrayList<Fragment> fragments = new ArrayList<>();
+        private final ArrayList<String> titles = new ArrayList<>();
+
+        public ViewPagerAdapter(@NonNull FragmentActivity fragmentActivity) {
+            super(fragmentActivity);
         }
 
-        void addFragments(Fragment fragment, String title)
-        {
+        void addFragments(Fragment fragment, String title) {
             fragments.add(fragment);
             titles.add(title);
         }
 
+        String getTitle(int position) {
+            return titles.get(position);
+        }
+
         @NonNull
-        @org.jetbrains.annotations.NotNull
         @Override
-        public Fragment getItem(int position) {
+        public Fragment createFragment(int position) {
             return fragments.get(position);
         }
 
         @Override
-        public int getCount() {
+        public int getItemCount() {
             return fragments.size();
-        }
-
-        @Nullable
-        @org.jetbrains.annotations.Nullable
-        @Override
-        public CharSequence getPageTitle(int position) {
-            return titles.get(position);
         }
     }
 

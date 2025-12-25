@@ -3,31 +3,34 @@ plugins {
 }
 
 android {
-    namespace 'com.fungisoft.seratonin'
-    compileSdk 36
+    namespace = 'com.fungisoft.seratonin'
+    compileSdk = 36
 
     defaultConfig {
-        applicationId "com.fungisoft.seratonin"
-        minSdk 24
-        targetSdk 36
-        versionCode 1
-        versionName "1.0"
+        applicationId = "com.fungisoft.seratonin"
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled = false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    tasks.withType(JavaCompile) {
+        options.compilerArgs << "-Xlint:deprecation"
     }
     buildFeatures {
-        viewBinding true
+        viewBinding = true
     }
 }
 

@@ -33,7 +33,7 @@ public class AlbumFragment extends Fragment {
         View view = inflater.inflate(R.layout.fragment_album, container, false);
         recyclerView = view.findViewById(R.id.recyclerView);
         recyclerView.setHasFixedSize(true);
-        if (!(albums.isEmpty())){
+        if (albums != null && !albums.isEmpty()){
             albumAdapter = new AlbumAdapter(getContext(), albums);
             recyclerView.setAdapter(albumAdapter);
             recyclerView.setLayoutManager(new GridLayoutManager(getContext(), 3));

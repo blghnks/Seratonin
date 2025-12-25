@@ -1,17 +1,37 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.SeratoninMusicPlayer" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/purple_500</item>
+    <!-- Base application theme - Dark AMOLED theme -->
+    <style name="Theme.SeratoninMusicPlayer" parent="Theme.MaterialComponents.NoActionBar">
+        <!-- Primary brand color -->
+        <item name="colorPrimary">@color/accent_purple</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
         <item name="colorOnPrimary">@color/white</item>
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_700</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Status bar color - semi-transparent for edge-to-edge -->
+        <!-- Secondary brand color -->
+        <item name="colorSecondary">@color/accent_purple</item>
+        <item name="colorSecondaryVariant">@color/purple_700</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <!-- Background and surface (AMOLED black) -->
+        <item name="android:colorBackground">@color/background_dark</item>
+        <item name="colorSurface">@color/surface_dark</item>
+        <item name="colorOnSurface">@color/text_primary_dark</item>
+        <!-- Status bar and navigation bar - transparent for edge-to-edge -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <!-- Customize your theme here. -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <!-- Tab styling -->
+        <item name="tabStyle">@style/CustomTabStyle</item>
+        <!-- Ripple color -->
+        <item name="android:colorControlHighlight">@color/accent_purple_dim</item>
+    </style>
+    
+    <!-- Custom Tab Style - Material You inspired -->
+    <style name="CustomTabStyle" parent="Widget.MaterialComponents.TabLayout">
+        <item name="tabIndicatorColor">@color/tab_indicator</item>
+        <item name="tabSelectedTextColor">@color/tab_selected</item>
+        <item name="tabTextColor">@color/tab_unselected</item>
+        <item name="tabIndicatorHeight">3dp</item>
+        <item name="tabIndicatorFullWidth">false</item>
+        <item name="tabRippleColor">@color/accent_purple_dim</item>
+        <item name="tabBackground">@android:color/transparent</item>
     </style>
 </resources>

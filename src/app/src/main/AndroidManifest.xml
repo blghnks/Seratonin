@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.fungisoft.seratonin">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- For Android 12 and below -->
@@ -26,6 +25,9 @@
         <activity android:name=".AlbumDetails"
             android:parentActivityName=".MainActivity"
             android:noHistory="false"></activity>
+        <activity android:name=".ArtistAlbumsActivity"
+            android:parentActivityName=".MainActivity"
+            android:noHistory="false"></activity>
         <activity android:name=".PlayerActivity"
             android:parentActivityName=".MainActivity"
             android:hardwareAccelerated="true"
@@ -49,6 +51,7 @@
                 <action android:name="actionprevious"/>
                 <action android:name="actionnext"/>
                 <action android:name="actionplay"/>
+                <action android:name="actionstop"/>
             </intent-filter>
         </receiver>
     </application>

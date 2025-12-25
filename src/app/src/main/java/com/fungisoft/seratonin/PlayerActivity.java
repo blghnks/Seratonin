@@ -26,6 +26,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import androidx.preference.PreferenceManager;
 
 import android.view.View;
@@ -59,7 +60,7 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     static ArrayList<MusicFiles> listSongs = new ArrayList<>();
     static Uri uri;
 //    static MediaPlayer mediaPlayer;
-    private final Handler handler = new Handler();
+    private final Handler handler = new Handler(Looper.getMainLooper());
     MusicService musicService;
     static MusicService passMusicService;
 
@@ -645,32 +646,40 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                             ImageView gredient = findViewById(R.id.imageViewGredient);
                             ConstraintLayout mContainer = findViewById(R.id.mContainer);
                             gredient.setImageResource(R.drawable.gredient_bg);
-//                        ConstraintLayout topGradient = (ConstraintLayout) findViewById(R.id.layot_top_btn);
-//                        topGradient.setBackgroundResource(R.drawable.gredient_for_top_bg);
                             mContainer.setBackgroundResource(R.drawable.main_bg);
                             GradientDrawable gradientDrawable = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
                                     new int[]{swatch.getRgb(), 0x00000000});
                             gredient.setBackground(gradientDrawable);
-                            GradientDrawable gradientDrawableBg = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                                    new int[]{0x44444444, swatch.getRgb()});
                             GradientDrawable mContainer_gradientDrawableBg = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
                                     new int[]{0x44444444, swatch.getRgb()});
-                            NowPlayingFragmentBottom.bottom_bac_frag.setBackground(gradientDrawableBg);
                             mContainer.setBackground(mContainer_gradientDrawableBg);
+                            
+                            // Now Playing bar uses SOLID color (Material You requirement) - no gradient
+                            int nowPlayingBgColor = getResources().getColor(R.color.now_playing_bg, getTheme());
+                            NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(nowPlayingBgColor);
 
-                            song_name.setTextColor(swatch.getTitleTextColor());
-                            artist_name.setTextColor(swatch.getBodyTextColor());
-                            album_name.setTextColor(swatch.getTitleTextColor());
-                            textNowplaying.setTextColor(swatch.getBodyTextColor());
-                            NowPlayingFragmentBottom.songName.setTextColor(swatch.getBodyTextColor());
-                            NowPlayingFragmentBottom.artist.setTextColor(swatch.getTitleTextColor());
-//                        playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(swatch.getRgb()));
+                            // Use high-contrast white text with shadow (defined in XML) for legibility on any background
+                            int textPrimary = Color.WHITE;
+                            int textSecondary = Color.parseColor("#E0E0E0");  // Light gray for secondary
+                            int textTertiary = Color.parseColor("#BDBDBD");   // Medium gray for tertiary
+                            
+                            song_name.setTextColor(textPrimary);
+                            artist_name.setTextColor(textSecondary);
+                            album_name.setTextColor(textTertiary);
+                            textNowplaying.setTextColor(textPrimary);
+                            
+                            // Now Playing bar text uses fixed readable colors (dark theme)
+                            int nowPlayingTextPrimary = getResources().getColor(R.color.text_primary_dark, getTheme());
+                            int nowPlayingTextSecondary = getResources().getColor(R.color.text_secondary_dark, getTheme());
+                            NowPlayingFragmentBottom.songName.setTextColor(nowPlayingTextPrimary);
+                            NowPlayingFragmentBottom.artist.setTextColor(nowPlayingTextSecondary);
+                            
                             if (isColorDark(swatch.getRgb())){
-                                int ColorValue = Color.parseColor("#E8DFDF");
+                                int ColorValue = Color.parseColor("#FFFFFF");
                                 ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
                                 ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
                             }else{
-                                int ColorValue = Color.parseColor("#353131");
+                                int ColorValue = Color.parseColor("#1A1A1A");
                                 ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
                                 ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
                             }
@@ -679,22 +688,8 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
 
                         }
                         else {
-                            ImageView gredient = findViewById(R.id.imageViewGredient);
-                            ConstraintLayout mContainer = findViewById(R.id.mContainer);
-                            gredient.setImageResource(R.drawable.gredient_bg);
-                            mContainer.setBackgroundResource(R.drawable.main_bg);
-                            GradientDrawable gradientDrawable = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                                    new int[]{0xff000000, 0x00000000});
-                            gredient.setBackground(gradientDrawable);
-                            GradientDrawable gradientDrawableBg_mContainer = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                                    new int[]{0xff000000, 0xff000000});
-                            GradientDrawable gradientDrawableBg = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                                    new int[]{0xff000000, 0xff000000});
-                            NowPlayingFragmentBottom.bottom_bac_frag.setBackground(gradientDrawableBg);
-                            mContainer.setBackground(gradientDrawableBg_mContainer);
-                            song_name.setTextColor(Color.WHITE);
-                            artist_name.setTextColor(Color.DKGRAY);
-                            album_name.setTextColor(Color.WHITE);
+                            // No swatch - use default dark theme colors
+                            setDefaultColors();
                         }
                     }
 
@@ -708,17 +703,8 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                             .load(R.drawable.musicicon)
                             .into(cover_art);
                 }
-
-                ImageView gradient = findViewById(R.id.imageViewGredient);
-                ConstraintLayout mContainer = findViewById(R.id.mContainer);
-                gradient.setImageResource(R.drawable.gredient_bg);
-                mContainer.setBackgroundResource(R.drawable.main_bg);
-//            GradientDrawable gradientDrawableBg = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-//                    new int[]{0xff000000, 0xff000000});
-//            NowPlayingFragmentBottom.bottom_bac_frag.setBackground(gradientDrawableBg);
-                song_name.setTextColor(Color.WHITE);
-                artist_name.setTextColor(Color.DKGRAY);
-                album_name.setTextColor(Color.WHITE);
+                // No album art - use default dark theme colors
+                setDefaultColors();
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -729,6 +715,41 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                 e.printStackTrace();
             }
         }
+    }
+    
+    /**
+     * Sets default dark theme colors for player and now playing bar.
+     * Used when no album art is available or palette extraction fails.
+     */
+    private void setDefaultColors() {
+        ImageView gradient = findViewById(R.id.imageViewGredient);
+        ConstraintLayout mContainer = findViewById(R.id.mContainer);
+        gradient.setImageResource(R.drawable.gredient_bg);
+        mContainer.setBackgroundColor(getResources().getColor(R.color.background_dark, getTheme()));
+        
+        // Now Playing bar uses solid color (Material You)
+        int nowPlayingBgColor = getResources().getColor(R.color.now_playing_bg, getTheme());
+        NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(nowPlayingBgColor);
+        
+        // Player text - readable on dark background
+        int textPrimary = getResources().getColor(R.color.text_primary_dark, getTheme());
+        int textSecondary = getResources().getColor(R.color.text_secondary_dark, getTheme());
+        int textTertiary = getResources().getColor(R.color.text_tertiary_dark, getTheme());
+        
+        song_name.setTextColor(textPrimary);
+        artist_name.setTextColor(textSecondary);
+        album_name.setTextColor(textTertiary);
+        
+        // Now Playing bar text - always readable
+        NowPlayingFragmentBottom.songName.setTextColor(textPrimary);
+        NowPlayingFragmentBottom.artist.setTextColor(textSecondary);
+        
+        // Default accent color for FAB
+        int accentColor = getResources().getColor(R.color.accent_purple, getTheme());
+        playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(accentColor));
+        NowPlayingFragmentBottom.playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(accentColor));
+        ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(Color.WHITE));
+        ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(Color.WHITE));
     }
 
     public void ImageAnimation(Context context, ImageView imageView, Bitmap bitmap)

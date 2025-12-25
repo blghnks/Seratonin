@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:paddingHorizontal="@dimen/spacing_md"
+    android:paddingVertical="@dimen/spacing_sm">
+
+    <!-- Artist Icon Circle -->
+    <ImageView
+        android:id="@+id/artist_icon"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/artist_icon_background"
+        android:padding="12dp"
+        android:src="@drawable/ic_artist"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:tint="@color/accent_purple" />
+
+    <!-- Artist Name -->
+    <TextView
+        android:id="@+id/artist_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_md"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/text_primary_dark"
+        android:textSize="@dimen/text_body"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@+id/artist_subtitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/artist_icon"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_chainStyle="packed"
+        tools:text="Artist Name" />
+
+    <!-- Artist Subtitle (album count, song count) -->
+    <TextView
+        android:id="@+id/artist_subtitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_md"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/text_secondary_dark"
+        android:textSize="@dimen/text_caption"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/artist_icon"
+        app:layout_constraintTop_toBottomOf="@+id/artist_name"
+        tools:text="3 albums • 24 songs" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

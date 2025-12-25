@@ -24,7 +24,7 @@ import static com.fungisoft.seratonin.MainActivity.musicFiles;
 public class AlbumDetails extends AppCompatActivity {
 
     RecyclerView recyclerView;
-    ImageView albumPhoto;
+    ImageView albumPhoto, backButton;
     TextView passAlbumName, passArtistName;
     String albumName, artistName;
     ArrayList<MusicFiles> albumSongs = new ArrayList<>();
@@ -49,6 +49,11 @@ public class AlbumDetails extends AppCompatActivity {
         albumPhoto = findViewById(R.id.albumPhoto);
         passArtistName = findViewById(R.id.art_name);
         passAlbumName = findViewById(R.id.alb_name);
+        backButton = findViewById(R.id.back_button);
+        
+        // Back button click
+        backButton.setOnClickListener(v -> finish());
+        
         artistName = getIntent().getStringExtra("artistName");
         albumName = getIntent().getStringExtra("albumName");
         passAlbumName.setText(albumName);

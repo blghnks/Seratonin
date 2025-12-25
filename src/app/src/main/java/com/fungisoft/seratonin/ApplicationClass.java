@@ -12,6 +12,7 @@ public class ApplicationClass extends Application {
     public static final String ACTION_PREVIOUS = "actionprevious";
     public static final String ACTION_NEXT = "actionnext";
     public static final String ACTION_PLAY = "actionplay";
+    public static final String ACTION_STOP = "actionstop";
 
     @Override
     public void onCreate() {
@@ -21,23 +22,23 @@ public class ApplicationClass extends Application {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O){
+            // General notification channel
             NotificationChannel channel1 =
                     new NotificationChannel(CHANNEL_ID_1,
-                            "Channel(1)", NotificationManager.IMPORTANCE_HIGH);
-            channel1.setDescription("Channel 1 Desc..");
+                            "General Notifications", NotificationManager.IMPORTANCE_DEFAULT);
+            channel1.setDescription("General app notifications");
 
+            // Media playback channel - use LOW importance to avoid intrusive alerts
             NotificationChannel channel2 =
                     new NotificationChannel(CHANNEL_ID_2,
-                            "Channel(2)", NotificationManager.IMPORTANCE_HIGH);
-            channel1.setDescription("Channel 2 Desc..");
-
-            //HERE ABOVE DOUBT
+                            "Media Playback", NotificationManager.IMPORTANCE_LOW);
+            channel2.setDescription("Music playback controls");
+            channel2.setShowBadge(false);
+            channel2.setSound(null, null);
 
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
             notificationManager.createNotificationChannel(channel1);
             notificationManager.createNotificationChannel(channel2);
-
-
         }
     }
 }

@@ -1,103 +1,118 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/card_bottom_player"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:background="#131313"
-    tools:context=".NowPlayingFragmentBottom"
+    android:background="@color/now_playing_bg"
     android:clickable="true"
-    android:focusable="true">
+    android:focusable="true"
+    android:paddingHorizontal="@dimen/spacing_sm"
+    android:paddingTop="@dimen/spacing_sm"
+    android:paddingBottom="@dimen/spacing_md"
+    tools:context=".NowPlayingFragmentBottom">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:id="@+id/card_bottom_player"
-        android:background="@android:color/black"
-        android:padding="5dp"
-        app:layout_constraintTop_toTopOf="parent"
+    <!-- Album Art with rounded corners -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/album_art_card"
+        android:layout_width="@dimen/now_playing_art_size"
+        android:layout_height="@dimen/now_playing_art_size"
+        app:cardCornerRadius="10dp"
+        app:cardElevation="4dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintTop_toTopOf="parent">
 
         <androidx.appcompat.widget.AppCompatImageView
-            android:layout_width="59dp"
-            android:layout_height="59dp"
-            android:src="@drawable/musicicon"
             android:id="@+id/bottom_album_art"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
             android:scaleType="centerCrop"
-            android:contentDescription="prev"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"/>
+            android:src="@drawable/musicicon" />
 
-        <ImageView
-            android:layout_width="30dp"
-            android:layout_height="30dp"
-            android:id="@+id/skip_next_bottom"
-            app:srcCompat="@drawable/ic_skip_next"
-            android:layout_marginEnd="8dp"
-            android:contentDescription="next"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"/>
+    </androidx.cardview.widget.CardView>
 
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:srcCompat="@drawable/ic_play"
-            android:layout_marginEnd="5dp"
-            app:fabSize="mini"
-            android:id="@+id/play_pause_miniPlayer"
-            app:backgroundTint="#FFFFFF"
-            android:outlineAmbientShadowColor="@android:color/white"
-            android:outlineSpotShadowColor="@android:color/white"
-            android:contentDescription="Playpause"
-            app:layout_constraintEnd_toStartOf="@id/skip_next_bottom"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"/>
+    <!-- Song Title -->
+    <TextView
+        android:id="@+id/song_name_miniPlayer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:ellipsize="marquee"
+        android:marqueeRepeatLimit="marquee_forever"
+        android:maxLines="1"
+        android:scrollHorizontally="true"
+        android:singleLine="true"
+        android:text=""
+        android:textColor="@color/text_primary_dark"
+        android:textSize="@dimen/text_body"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@+id/song_artist_miniPlayer"
+        app:layout_constraintEnd_toStartOf="@+id/skip_prev_bottom"
+        app:layout_constraintStart_toEndOf="@id/album_art_card"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_chainStyle="packed" />
 
-        <ImageView
-            android:layout_width="30dp"
-            android:layout_height="30dp"
-            android:id="@+id/skip_prev_bottom"
-            app:srcCompat="@drawable/ic_skip_previous"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="5dp"
-            android:contentDescription="previous"
-            app:layout_constraintEnd_toStartOf="@id/play_pause_miniPlayer"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"/>
+    <!-- Artist Name -->
+    <TextView
+        android:id="@+id/song_artist_miniPlayer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginTop="2dp"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text=""
+        android:textColor="@color/text_secondary_dark"
+        android:textSize="@dimen/text_caption"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/skip_prev_bottom"
+        app:layout_constraintStart_toEndOf="@id/album_art_card"
+        app:layout_constraintTop_toBottomOf="@+id/song_name_miniPlayer" />
 
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:id="@+id/song_name_miniPlayer"
-            android:text=""
-            android:textColor="@color/white"
-            android:layout_marginTop="8.5dp"
-            android:layout_marginStart="7dp"
-            android:textSize="16sp"
-            android:maxLines="1"
-            android:textStyle="bold"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintStart_toEndOf="@id/bottom_album_art"
-            app:layout_constraintEnd_toStartOf="@+id/skip_prev_bottom"/>
+    <!-- Previous Button -->
+    <ImageView
+        android:id="@+id/skip_prev_bottom"
+        android:layout_width="@dimen/now_playing_button_size"
+        android:layout_height="@dimen/now_playing_button_size"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="previous"
+        android:padding="10dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/play_pause_miniPlayer"
+        app:layout_constraintTop_toTopOf="parent"
+        app:srcCompat="@drawable/ic_skip_previous"
+        app:tint="@color/text_primary_dark" />
 
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:id="@+id/song_artist_miniPlayer"
-            android:text=""
-            android:textColor="@color/white"
-            android:layout_marginTop="0.8dp"
-            android:layout_marginStart="9.2dp"
-            android:textSize="13sp"
-            android:maxLines="1"
-            app:layout_constraintTop_toBottomOf="@+id/song_name_miniPlayer"
-            app:layout_constraintStart_toEndOf="@id/bottom_album_art"
-            app:layout_constraintEnd_toStartOf="@+id/skip_prev_bottom"/>
+    <!-- Play/Pause Button -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/play_pause_miniPlayer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:contentDescription="Play/Pause"
+        app:backgroundTint="@color/accent_purple"
+        app:fabSize="mini"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/skip_next_bottom"
+        app:layout_constraintTop_toTopOf="parent"
+        app:srcCompat="@drawable/ic_play"
+        app:tint="@color/white" />
 
-    </androidx.constraintlayout.widget.ConstraintLayout>
+    <!-- Next Button -->
+    <ImageView
+        android:id="@+id/skip_next_bottom"
+        android:layout_width="@dimen/now_playing_button_size"
+        android:layout_height="@dimen/now_playing_button_size"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="next"
+        android:padding="10dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:srcCompat="@drawable/ic_skip_next"
+        app:tint="@color/text_primary_dark" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

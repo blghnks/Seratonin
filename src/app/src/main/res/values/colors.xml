@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Primary colors -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>
@@ -7,4 +8,41 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    
+    <!-- AMOLED Dark Theme Colors -->
+    <color name="background_dark">#FF000000</color>
+    <color name="surface_dark">#FF0D0D0D</color>
+    <color name="surface_elevated">#FF1A1A1A</color>
+    <color name="card_background_dark">#FF141414</color>
+    
+    <!-- Text Colors (Dark Theme) -->
+    <color name="text_primary_dark">#FFFFFFFF</color>
+    <color name="text_secondary_dark">#FFB3B3B3</color>
+    <color name="text_tertiary_dark">#FF757575</color>
+    
+    <!-- Accent Colors -->
+    <color name="accent_purple">#FF9D7FEA</color>
+    <color name="accent_purple_dim">#66B388FF</color>
+    
+    <!-- Tab Colors -->
+    <color name="tab_indicator">#FF9D7FEA</color>
+    <color name="tab_selected">#FFFFFFFF</color>
+    <color name="tab_unselected">#99FFFFFF</color>
+    
+    <!-- Divider/Border -->
+    <color name="divider_dark">#FF2A2A2A</color>
+    
+    <!-- Now Playing Bar (neutral dark base for dynamic coloring) -->
+    <color name="now_playing_bg">#FF0A0A0A</color>
+    
+    <!-- Default fallback gradient (when no album art) -->
+    <color name="player_gradient_start">#FF000000</color>
+    <color name="player_gradient_end">#FF1A1A1A</color>
+    
+    <!-- Legacy references (for compatibility) -->
+    <color name="background_light">@color/background_dark</color>
+    <color name="surface_light">@color/surface_dark</color>
+    <color name="card_background">@color/card_background_dark</color>
+    <color name="text_primary_light">@color/text_primary_dark</color>
+    <color name="text_secondary_light">@color/text_secondary_dark</color>
 </resources>

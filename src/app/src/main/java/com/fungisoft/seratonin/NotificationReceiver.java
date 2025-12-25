@@ -3,11 +3,11 @@ package com.fungisoft.seratonin;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.widget.Toast;
 
 import static com.fungisoft.seratonin.ApplicationClass.ACTION_NEXT;
 import static com.fungisoft.seratonin.ApplicationClass.ACTION_PLAY;
 import static com.fungisoft.seratonin.ApplicationClass.ACTION_PREVIOUS;
+import static com.fungisoft.seratonin.ApplicationClass.ACTION_STOP;
 
 public class NotificationReceiver extends BroadcastReceiver {
     @Override
@@ -26,6 +26,10 @@ public class NotificationReceiver extends BroadcastReceiver {
                     break;
                 case ACTION_PREVIOUS:
                     serviceIntent.putExtra("ActionName", "previous");
+                    context.startService(serviceIntent);
+                    break;
+                case ACTION_STOP:
+                    serviceIntent.putExtra("ActionName", "stop");
                     context.startService(serviceIntent);
                     break;
             }

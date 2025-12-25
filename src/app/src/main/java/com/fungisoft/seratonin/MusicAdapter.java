@@ -29,12 +29,10 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
 
     static ArrayList<MusicFiles> mFiles;
     private final Context mContext;
-//    static ArrayList<MusicFiles> mFiles = new ArrayList<MusicFiles>();
 
     MusicAdapter(Context mContext, ArrayList<MusicFiles> mFiles) {
-        this.mFiles = mFiles;
+        MusicAdapter.mFiles = mFiles;
         this.mContext = mContext;
-
     }
 
 
