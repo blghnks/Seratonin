@@ -10,7 +10,6 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import android.media.MediaMetadataRetriever;
 import android.os.Bundle;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -65,7 +64,8 @@ public class AlbumDetails extends AppCompatActivity {
                 j++;
             }
         }
-        byte[] image = getAlbumArt(albumSongs.get(0).getPath());
+        // Use album art loading: external first, then embedded fallback (album-level display)
+        byte[] image = AlbumArtHelper.getAlbumArtForAlbum(this, albumSongs.get(0).getPath());
         if (image != null){
             Glide.with(this)
                     .load(image)
@@ -100,22 +100,6 @@ public class AlbumDetails extends AppCompatActivity {
             albumDetailsAdapter = new AlbumDetailsAdapter(this, albumSongs);
             recyclerView.setAdapter(albumDetailsAdapter);
             recyclerView.setLayoutManager(new LinearLayoutManager(this, RecyclerView.VERTICAL,false));
-        }
-    }
-
-    private byte[] getAlbumArt(String uri){
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(uri);
-            return retriever.getEmbeddedPicture();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                // Ignore release exception
-            }
         }
     }
 }

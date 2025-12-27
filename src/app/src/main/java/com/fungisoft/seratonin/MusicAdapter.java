@@ -3,7 +3,6 @@ package com.fungisoft.seratonin;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
-import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.provider.MediaStore;
 import android.view.LayoutInflater;
@@ -50,7 +49,8 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
         holder.artist_name.setText(mFiles.get(position).getArtist());
         int totalDuration = Integer.parseInt(mFiles.get(position).getDuration()) / 1000;
         holder.duration.setText(formatTime(totalDuration));
-        byte[] image = getAlbumArt(mFiles.get(position).getPath());
+        // Use song art loading: embedded first, then external fallback
+        byte[] image = AlbumArtHelper.getAlbumArtForSong(mContext, mFiles.get(position).getPath());
         if (image != null) {
             Glide.with(mContext).asBitmap()
                     .load(image)
@@ -138,22 +138,6 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
     @Override
     public int getItemCount() {
         return mFiles.size();
-    }
-
-    private byte[] getAlbumArt(String uri) {
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(uri);
-            return retriever.getEmbeddedPicture();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                // Ignore release exception
-            }
-        }
     }
 
     void updateList(ArrayList<MusicFiles> musicFilesArrayList) {

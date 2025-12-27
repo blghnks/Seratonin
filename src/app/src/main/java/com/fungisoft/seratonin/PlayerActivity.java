@@ -21,7 +21,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -622,98 +621,89 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         return !(darkness < 0.5);
     }
     private void metaData(Uri uri){
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(uri.toString());
-            int durationTotal = Integer.parseInt(listSongs.get(position).getDuration()) / 1000;
-            duration_total.setText (formattedTime(durationTotal));
-            byte[] art = retriever.getEmbeddedPicture();
-            artist_image = art;
-            Bitmap bitmap = null;
-            if (art != null){
-                bitmap = BitmapFactory.decodeByteArray(art, 0, art.length);
-            }
-            if (bitmap != null){
-                ImageAnimation(this, cover_art, bitmap);
-                final Bitmap finalBitmap = bitmap;
-                Palette.from(bitmap).generate(new Palette.PaletteAsyncListener() {
-                    @Override
-                    public void onGenerated(@Nullable @org.jetbrains.annotations.Nullable Palette palette) {
-                        assert palette != null;
-                        Palette.Swatch swatch = palette.getDominantSwatch();
-                        if (swatch != null)
-                        {
-                            ImageView gredient = findViewById(R.id.imageViewGredient);
-                            ConstraintLayout mContainer = findViewById(R.id.mContainer);
-                            gredient.setImageResource(R.drawable.gredient_bg);
-                            mContainer.setBackgroundResource(R.drawable.main_bg);
-                            GradientDrawable gradientDrawable = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                                    new int[]{swatch.getRgb(), 0x00000000});
-                            gredient.setBackground(gradientDrawable);
-                            GradientDrawable mContainer_gradientDrawableBg = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                                    new int[]{0x44444444, swatch.getRgb()});
-                            mContainer.setBackground(mContainer_gradientDrawableBg);
-                            
-                            // Now Playing bar uses SOLID color (Material You requirement) - no gradient
-                            int nowPlayingBgColor = getResources().getColor(R.color.now_playing_bg, getTheme());
-                            NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(nowPlayingBgColor);
+        // Get duration from stored metadata
+        int durationTotal = Integer.parseInt(listSongs.get(position).getDuration()) / 1000;
+        duration_total.setText(formattedTime(durationTotal));
+        
+        // Use song art loading: embedded first, then external fallback
+        byte[] art = AlbumArtHelper.getAlbumArtForSong(this, uri.toString());
+        artist_image = art;
+        Bitmap bitmap = null;
+        if (art != null) {
+            bitmap = BitmapFactory.decodeByteArray(art, 0, art.length);
+        }
+        if (bitmap != null) {
+            ImageAnimation(this, cover_art, bitmap);
+            final Bitmap finalBitmap = bitmap;
+            Palette.from(bitmap).generate(new Palette.PaletteAsyncListener() {
+                @Override
+                public void onGenerated(@Nullable @org.jetbrains.annotations.Nullable Palette palette) {
+                    assert palette != null;
+                    Palette.Swatch swatch = palette.getDominantSwatch();
+                    if (swatch != null)
+                    {
+                        ImageView gredient = findViewById(R.id.imageViewGredient);
+                        ConstraintLayout mContainer = findViewById(R.id.mContainer);
+                        gredient.setImageResource(R.drawable.gredient_bg);
+                        mContainer.setBackgroundResource(R.drawable.main_bg);
+                        GradientDrawable gradientDrawable = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+                                new int[]{swatch.getRgb(), 0x00000000});
+                        gredient.setBackground(gradientDrawable);
+                        GradientDrawable mContainer_gradientDrawableBg = new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+                                new int[]{0x44444444, swatch.getRgb()});
+                        mContainer.setBackground(mContainer_gradientDrawableBg);
+                        
+                        // Now Playing bar uses SOLID color (Material You requirement) - no gradient
+                        int nowPlayingBgColor = getResources().getColor(R.color.now_playing_bg, getTheme());
+                        NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(nowPlayingBgColor);
 
-                            // Use high-contrast white text with shadow (defined in XML) for legibility on any background
-                            int textPrimary = Color.WHITE;
-                            int textSecondary = Color.parseColor("#E0E0E0");  // Light gray for secondary
-                            int textTertiary = Color.parseColor("#BDBDBD");   // Medium gray for tertiary
-                            
-                            song_name.setTextColor(textPrimary);
-                            artist_name.setTextColor(textSecondary);
-                            album_name.setTextColor(textTertiary);
-                            textNowplaying.setTextColor(textPrimary);
-                            
-                            // Now Playing bar text uses fixed readable colors (dark theme)
-                            int nowPlayingTextPrimary = getResources().getColor(R.color.text_primary_dark, getTheme());
-                            int nowPlayingTextSecondary = getResources().getColor(R.color.text_secondary_dark, getTheme());
-                            NowPlayingFragmentBottom.songName.setTextColor(nowPlayingTextPrimary);
-                            NowPlayingFragmentBottom.artist.setTextColor(nowPlayingTextSecondary);
-                            
-                            if (isColorDark(swatch.getRgb())){
-                                int ColorValue = Color.parseColor("#FFFFFF");
-                                ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
-                                ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
-                            }else{
-                                int ColorValue = Color.parseColor("#1A1A1A");
-                                ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
-                                ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
-                            }
-                            playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(swatch.getRgb()));
-                            NowPlayingFragmentBottom.playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(swatch.getRgb()));
+                        // Use high-contrast white text with shadow (defined in XML) for legibility on any background
+                        int textPrimary = Color.WHITE;
+                        int textSecondary = Color.parseColor("#E0E0E0");  // Light gray for secondary
+                        int textTertiary = Color.parseColor("#BDBDBD");   // Medium gray for tertiary
+                        
+                        song_name.setTextColor(textPrimary);
+                        artist_name.setTextColor(textSecondary);
+                        album_name.setTextColor(textTertiary);
+                        textNowplaying.setTextColor(textPrimary);
+                        
+                        // Now Playing bar text uses fixed readable colors (dark theme)
+                        int nowPlayingTextPrimary = getResources().getColor(R.color.text_primary_dark, getTheme());
+                        int nowPlayingTextSecondary = getResources().getColor(R.color.text_secondary_dark, getTheme());
+                        NowPlayingFragmentBottom.songName.setTextColor(nowPlayingTextPrimary);
+                        NowPlayingFragmentBottom.artist.setTextColor(nowPlayingTextSecondary);
+                        
+                        if (isColorDark(swatch.getRgb())){
+                            int ColorValue = Color.parseColor("#FFFFFF");
+                            ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
+                            ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
+                        }else{
+                            int ColorValue = Color.parseColor("#1A1A1A");
+                            ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
+                            ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
+                        }
+                        playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(swatch.getRgb()));
+                        NowPlayingFragmentBottom.playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(swatch.getRgb()));
 
-                        }
-                        else {
-                            // No swatch - use default dark theme colors
-                            setDefaultColors();
-                        }
                     }
-
-                });
-            }
-            else{
-                if (isValidContextForGlide(this)){
-                    // Load image via Glide lib using context
-                    Glide.with(this)
-                            .asBitmap()
-                            .load(R.drawable.musicicon)
-                            .into(cover_art);
+                    else {
+                        // No swatch - use default dark theme colors
+                        setDefaultColors();
+                    }
                 }
-                // No album art - use default dark theme colors
-                setDefaultColors();
+
+            });
+        }
+        else {
+            if (isValidContextForGlide(PlayerActivity.this)) {
+                // Load image via Glide lib using context
+                Glide.with(PlayerActivity.this)
+                        .asBitmap()
+                        .load(R.drawable.musicicon)
+                        .into(cover_art);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            // No album art - use default dark theme colors
+            setDefaultColors();
         }
     }
     

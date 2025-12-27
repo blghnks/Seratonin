@@ -7,7 +7,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
-import android.media.MediaMetadataRetriever;
 import android.os.Bundle;
 
 //import androidx.constraintlayout.widget.ConstraintSet;
@@ -99,7 +98,8 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
                         SONG_NAME_TO_FRAG = null;
                     }
                     if (SHOW_MINI_PLAYER){
-                        byte[] art = getAlbumArt(PATH_TO_FRAG);
+                        // Use song art loading: embedded first, then external fallback
+                        byte[] art = AlbumArtHelper.getAlbumArtForSong(requireContext(), PATH_TO_FRAG);
                         if (art != null){
                             Glide.with(requireContext()).load(art)
                                     .into(albumArt);
@@ -141,7 +141,8 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
                         SONG_NAME_TO_FRAG = null;
                     }
                     if (SHOW_MINI_PLAYER){
-                        byte[] art = getAlbumArt(PATH_TO_FRAG);
+                        // Use song art loading: embedded first, then external fallback
+                        byte[] art = AlbumArtHelper.getAlbumArtForSong(requireContext(), PATH_TO_FRAG);
                         if (art != null){
                             Glide.with(requireContext()).load(art)
                                     .into(albumArt);
@@ -198,7 +199,8 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
         super.onResume();
         if (SHOW_MINI_PLAYER){
             if (PATH_TO_FRAG != null){
-                byte[] art = getAlbumArt(PATH_TO_FRAG);
+                // Use song art loading: embedded first, then external fallback
+                byte[] art = AlbumArtHelper.getAlbumArtForSong(requireContext(), PATH_TO_FRAG);
                 if (art != null){
                     Glide.with(requireContext()).load(art)
                             .into(albumArt);
@@ -224,22 +226,6 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
         if (getContext() != null){
             if(bindservice) {
                 getContext().unbindService(this);
-            }
-        }
-    }
-
-    private byte[] getAlbumArt(String uri){
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(uri);
-            return retriever.getEmbeddedPicture();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                // Ignore release exception
             }
         }
     }

@@ -23,6 +23,9 @@
     <!-- Accent Colors -->
     <color name="accent_purple">#FF9D7FEA</color>
     <color name="accent_purple_dim">#66B388FF</color>
+    <color name="accent_primary">#FF9D7FEA</color>
+    <color name="accent_secondary">#FF6A5ACD</color>
+    <color name="button_primary">#FF7C4DFF</color>
     
     <!-- Tab Colors -->
     <color name="tab_indicator">#FF9D7FEA</color>

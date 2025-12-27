@@ -9,7 +9,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Binder;
@@ -382,8 +381,8 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
             Log.e(TAG, "Error parsing duration", e);
         }
         
-        // Add album art
-        byte[] albumArt = getAlbumArt(currentSong.getPath());
+        // Add album art - use song art loading: embedded first, then external fallback
+        byte[] albumArt = AlbumArtHelper.getAlbumArtForSong(this, currentSong.getPath());
         if (albumArt != null) {
             Bitmap bitmap = BitmapFactory.decodeByteArray(albumArt, 0, albumArt.length);
             if (bitmap != null) {
@@ -450,7 +449,8 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
                 .setAction(ACTION_STOP);
         PendingIntent stopPending = PendingIntent.getBroadcast(this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        byte[] picture = getAlbumArt(musicFiles.get(position).getPath());
+        // Use song art loading: embedded first, then external fallback
+        byte[] picture = AlbumArtHelper.getAlbumArtForSong(this, musicFiles.get(position).getPath());
         Bitmap thumb = null;
         if (picture != null) {
             thumb = BitmapFactory.decodeByteArray(picture, 0, picture.length);
@@ -501,22 +501,6 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
         
         notificationManager = (NotificationManager) this.getSystemService(Context.NOTIFICATION_SERVICE);
         notificationManager.notify(2, notification);
-    }
-
-    private byte[] getAlbumArt(String uri) {
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(uri);
-            return retriever.getEmbeddedPicture();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                // Ignore release exception
-            }
-        }
     }
 
     void playPauseBtnClicked() {

@@ -2,7 +2,6 @@ package com.fungisoft.seratonin;
 
 import android.content.Context;
 import android.content.Intent;
-import android.media.MediaMetadataRetriever;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -41,13 +40,13 @@ public class AlbumAdapter extends RecyclerView.Adapter<AlbumAdapter.MyHolder> {
     public void onBindViewHolder(@NonNull @NotNull MyHolder holder, int position) {
         holder.album_name.setText(albumFiles.get(position).getAlbum());
         holder.artist_name.setText(albumFiles.get(position).getArtist());
-        byte[] image = getAlbumArt(albumFiles.get(position).getPath());
-        if (image != null){
+        // Use grid-optimized art loading: external first, skip embedded if external exists
+        AlbumArtHelper.AlbumArtResult artResult = AlbumArtHelper.getAlbumArtForGrid(mContext, albumFiles.get(position).getPath());
+        if (artResult.artData != null) {
             Glide.with(mContext).asBitmap()
-                    .load(image)
+                    .load(artResult.artData)
                     .into(holder.album_image);
-        }
-        else {
+        } else {
             Glide.with(mContext)
                     .load(R.drawable.musicicon)
                     .into(holder.album_image);
@@ -77,22 +76,6 @@ public class AlbumAdapter extends RecyclerView.Adapter<AlbumAdapter.MyHolder> {
             album_image = itemView.findViewById(R.id.album_image);
             album_name = itemView.findViewById(R.id.album_name);
             artist_name = itemView.findViewById(R.id.artist_name);
-        }
-    }
-
-    private byte[] getAlbumArt(String uri){
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(uri);
-            return retriever.getEmbeddedPicture();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                // Ignore release exception
-            }
         }
     }
 }

@@ -25,7 +25,9 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import androidx.preference.PreferenceManager;
 import android.provider.MediaStore;
 import android.util.Log;
@@ -38,10 +40,12 @@ import com.google.android.material.tabs.TabLayout;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.io.File;
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity implements SearchView.OnQueryTextListener {
 
+    private static final String TAG = "MainActivity";
     public static final int REQUEST_CODE = 1;
     static ArrayList<MusicFiles> musicFiles;
     static boolean shuffleBoolean = false, repeatBoolean = false;
@@ -59,6 +63,16 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        // Check if setup is complete (permission + folder selected)
+        if (!FolderSelectionActivity.isSetupComplete(this)) {
+            // Redirect to folder selection
+            Intent intent = new Intent(this, FolderSelectionActivity.class);
+            startActivity(intent);
+            finish();
+            return;
+        }
+        
         // Enable edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_main);
@@ -71,15 +85,14 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             return WindowInsetsCompat.CONSUMED;
         });
         
-        permission();
+        // Load music from selected folder
+        loadMusic();
+        
         final SharedPreferences mSharedPreference= PreferenceManager.getDefaultSharedPreferences(this);
         Boolean passedPlayerAct=(mSharedPreference.getBoolean("playerActivitypass", false));
-//        Boolean isFirstRun = getSharedPreferences("PreferenceStart", MODE_PRIVATE).getBoolean("isfirstrun", true);
         if (passedPlayerAct == false){
             NowPlayingFragmentBottom.setLayoutInvisible();
-//            getSharedPreferences("PreferenceStart", MODE_PRIVATE).edit().putBoolean("isfirstrun", false).apply();
         }
-//        Toast.makeText(this, "MainActivity", Toast.LENGTH_SHORT).show();
         if (PlayerActivity.passMusicService != null){
             if (PlayerActivity.passMusicService.isPlaying()){
                 NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
@@ -90,39 +103,19 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         }
     }
 
-    private void permission() {
-        String permission;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            permission = Manifest.permission.READ_MEDIA_AUDIO;
-        } else {
-            permission = Manifest.permission.WRITE_EXTERNAL_STORAGE;
-        }
-        
-        if (ContextCompat.checkSelfPermission(getApplicationContext(), permission) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(MainActivity.this, new String[]{permission}, REQUEST_CODE);
-        } 
-        else{
-//            Toast.makeText(this, "Permission Granted!", Toast.LENGTH_SHORT).show();
-            musicFiles = getAllAudio(this);
+    private void loadMusic() {
+        String musicFolderPath = FolderSelectionActivity.getMusicFolderPath(this);
+        if (musicFolderPath != null) {
+            Log.d(TAG, "Loading music from: " + musicFolderPath);
+            musicFiles = getAllAudioFromFolder(this, musicFolderPath);
             initViewPager();
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull @NotNull String[] permissions, @NonNull @NotNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if(requestCode == REQUEST_CODE){
-            // Check if grantResults array is not empty before accessing it
-            if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED)
-            {
-//                Toast.makeText(this, "Permission Granted!", Toast.LENGTH_SHORT).show();
-                musicFiles = getAllAudio(this);
-                initViewPager();
-            }
-            else{
-                // User denied permission or cancelled - show a message instead of re-requesting
-                Toast.makeText(this, "Permission required to access music files", Toast.LENGTH_LONG).show();
-            }
+        } else {
+            Log.e(TAG, "No music folder selected");
+            Toast.makeText(this, "Please select a music folder", Toast.LENGTH_SHORT).show();
+            // Redirect to folder selection
+            Intent intent = new Intent(this, FolderSelectionActivity.class);
+            startActivity(intent);
+            finish();
         }
     }
 
@@ -172,6 +165,83 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         }
     }
 
+    /**
+     * Get all audio files from a specific folder and its subfolders.
+     * This replaces the old getAllAudio() method that scanned the entire device.
+     *
+     * @param context Application context
+     * @param folderPath The folder path to scan (selected by user)
+     * @return List of music files found in the folder
+     */
+    public ArrayList<MusicFiles> getAllAudioFromFolder(Context context, String folderPath) {
+        SharedPreferences preferences = getSharedPreferences(MY_SORT_PREF, MODE_PRIVATE);
+        String sortOrder = preferences.getString("sorting", "sortByName");
+        ArrayList<String> duplicate = new ArrayList<>();
+        ArrayList<MusicFiles> tempAudioList = new ArrayList<>();
+        albums.clear();
+        
+        String order = null;
+        Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        switch (sortOrder) {
+            case "sortByTitle":
+                order = MediaStore.MediaColumns.TITLE + " ASC ";
+                break;
+            case "sortByDate":
+                order = MediaStore.MediaColumns.DATE_ADDED + " DESC ";
+                break;
+            case "sortBySize":
+                order = MediaStore.MediaColumns.SIZE + " DESC ";
+                break;
+        }
+        
+        String[] projection = {
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media._ID
+        };
+        
+        // Filter by folder path - only get files under the selected folder
+        // Use LIKE with wildcard to match all files in folder and subfolders
+        String selection = MediaStore.Audio.Media.DATA + " LIKE ?";
+        String[] selectionArgs = new String[]{ folderPath + "%" };
+        
+        Log.d(TAG, "Querying MediaStore for files in: " + folderPath);
+        
+        Cursor cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, order);
+        if (cursor != null) {
+            Log.d(TAG, "Found " + cursor.getCount() + " audio files");
+            while (cursor.moveToNext()) {
+                String album = cursor.getString(0);
+                String title = cursor.getString(1);
+                String duration = cursor.getString(2);
+                String path = cursor.getString(3);
+                String artist = cursor.getString(4);
+                String id = cursor.getString(5);
+
+                MusicFiles musicFiles = new MusicFiles(path, title, artist, album, duration, id);
+                Log.d(TAG, "Found: " + title + " at " + path);
+                tempAudioList.add(musicFiles);
+                
+                if (!duplicate.contains(album)) {
+                    albums.add(musicFiles);
+                    duplicate.add(album);
+                }
+            }
+            cursor.close();
+        } else {
+            Log.e(TAG, "MediaStore query returned null cursor");
+        }
+        
+        return tempAudioList;
+    }
+
+    /**
+     * @deprecated Use getAllAudioFromFolder instead for folder-restricted scanning
+     */
+    @Deprecated
     public ArrayList<MusicFiles> getAllAudio(Context context)
     {
         SharedPreferences preferences = getSharedPreferences(MY_SORT_PREF, MODE_PRIVATE);
@@ -274,6 +344,11 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             editor.putString("sorting", "sortBySize");
             editor.apply();
             this.recreate();
+        } else if (itemId == R.id.change_folder) {
+            // Open folder selection activity
+            Intent intent = new Intent(this, FolderSelectionActivity.class);
+            intent.putExtra("changing_folder", true);
+            startActivity(intent);
         }
         return super.onOptionsItemSelected(item);
     }

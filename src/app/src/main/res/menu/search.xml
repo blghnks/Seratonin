@@ -30,4 +30,9 @@
         </menu>
     </item>
 
+    <item
+        android:title="Change Music Folder"
+        android:id="@+id/change_folder"
+        app:showAsAction="never"/>
+
 </menu>

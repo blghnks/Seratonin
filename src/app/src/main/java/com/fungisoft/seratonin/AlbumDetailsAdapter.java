@@ -2,7 +2,6 @@ package com.fungisoft.seratonin;
 
 import android.content.Context;
 import android.content.Intent;
-import android.media.MediaMetadataRetriever;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -45,7 +44,8 @@ public class AlbumDetailsAdapter extends RecyclerView.Adapter<AlbumDetailsAdapte
         holder.artist_name.setText(albumFiles.get(position).getArtist());
         int duration = Integer.parseInt(albumFiles.get(position).getDuration()) / 1000;
         holder.alb_duration.setText(formattedTime(duration));
-        byte[] image = getAlbumArt(albumFiles.get(position).getPath());
+        // Use song art loading: embedded first, then external fallback
+        byte[] image = AlbumArtHelper.getAlbumArtForSong(mContext, albumFiles.get(position).getPath());
         checkAlbumPass = true;
         passAlbumImage = image;
         if (image != null){
@@ -118,22 +118,6 @@ public class AlbumDetailsAdapter extends RecyclerView.Adapter<AlbumDetailsAdapte
             album_name = itemView.findViewById(R.id.music_file_name);
             artist_name = itemView.findViewById(R.id.artis_name);
             alb_duration = itemView.findViewById(R.id.alb_duration);
-        }
-    }
-
-    private byte[] getAlbumArt(String uri){
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(uri);
-            return retriever.getEmbeddedPicture();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            try {
-                retriever.release();
-            } catch (Exception e) {
-                // Ignore release exception
-            }
         }
     }
 }
