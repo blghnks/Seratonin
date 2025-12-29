@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/mContainer"
+    android:id="@+id/player_coordinator"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background_dark"
     tools:context=".PlayerActivity">
+
+<androidx.constraintlayout.widget.ConstraintLayout
+    android:id="@+id/mContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background_dark">
 
     <!-- Top bar -->
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -271,3 +277,165 @@
     </androidx.constraintlayout.widget.ConstraintLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+
+<!-- Queue Bottom Sheet -->
+<LinearLayout
+    android:id="@+id/queue_bottom_sheet"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bottom_sheet_background"
+    android:elevation="16dp"
+    app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
+    app:behavior_hideable="false"
+    app:behavior_peekHeight="72dp">
+
+    <!-- Peek content - shows next song -->
+    <LinearLayout
+        android:id="@+id/queue_peek_content"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingTop="@dimen/spacing_sm">
+
+        <!-- Drag handle -->
+        <View
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:background="@drawable/bottom_sheet_handle"
+            android:layout_marginBottom="@dimen/spacing_sm" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/spacing_md"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Up Next: "
+                android:textColor="@color/text_secondary_dark"
+                android:textSize="@dimen/text_caption" />
+
+            <TextView
+                android:id="@+id/next_song_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_primary_dark"
+                android:textSize="@dimen/text_body"
+                tools:text="Next Song Title" />
+
+            <TextView
+                android:id="@+id/queue_count_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/spacing_sm"
+                android:background="@drawable/badge_background"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="2dp"
+                android:textColor="@color/white"
+                android:textSize="@dimen/text_caption"
+                tools:text="12" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:id="@+id/queue_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider_dark"
+        android:visibility="gone" />
+
+    <!-- Expanded content - Queue header -->
+    <LinearLayout
+        android:id="@+id/queue_header"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/spacing_md"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Queue"
+            android:textColor="@color/text_primary_dark"
+            android:textSize="@dimen/text_title_medium"
+            android:textStyle="bold" />
+
+        <!-- Save to M3U button -->
+        <ImageView
+            android:id="@+id/save_queue_btn"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Save queue as playlist"
+            android:src="@drawable/ic_save"
+            app:tint="@color/text_secondary_dark" />
+
+        <!-- Clear queue button -->
+        <ImageView
+            android:id="@+id/clear_queue_btn"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Clear queue"
+            android:src="@drawable/ic_delete"
+            app:tint="@color/text_secondary_dark" />
+
+    </LinearLayout>
+
+    <!-- Queue list -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/queue_recycler_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="@dimen/spacing_lg"
+        android:visibility="gone"
+        tools:listitem="@layout/item_queue" />
+
+    <!-- Empty state -->
+    <LinearLayout
+        android:id="@+id/empty_queue_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_queue"
+            android:alpha="0.5"
+            app:tint="@color/text_secondary_dark" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:text="Queue is empty"
+            android:textColor="@color/text_secondary_dark"
+            android:textSize="@dimen/text_body" />
+
+    </LinearLayout>
+
+</LinearLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
