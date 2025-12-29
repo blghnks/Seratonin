@@ -2,6 +2,7 @@ package com.fungisoft.seratonin;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.view.menu.MenuWrapperICS;
 import androidx.appcompat.widget.SearchView;
@@ -19,6 +20,7 @@ import androidx.viewpager2.widget.ViewPager2;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -33,7 +35,13 @@ import android.provider.MediaStore;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.Window;
+import android.widget.ImageView;
+import android.widget.PopupMenu;
+import android.widget.ProgressBar;
 import android.widget.TableLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.material.tabs.TabLayout;
@@ -42,6 +50,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity implements SearchView.OnQueryTextListener {
 
@@ -59,6 +70,15 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     public static String SONG_NAME_TO_FRAG = null;
     public static final String ARTIST_NAME = "ARTIST NAME";
     public static final String SONG_NAME = "SONG NAME";
+    
+    // Executor for background tasks
+    private ExecutorService executor;
+    
+    // Progress dialog for caching
+    private Dialog progressDialog;
+    private ProgressBar progressBar;
+    private TextView progressMessage;
+    private TextView progressPercent;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,8 +105,14 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             return WindowInsetsCompat.CONSUMED;
         });
         
+        // Setup menu button
+        ImageView menuButton = findViewById(R.id.menu_button);
+        menuButton.setOnClickListener(this::showMainMenu);
+        
         // Load music from selected folder
-        loadMusic();
+        boolean runFullScan = getIntent().getBooleanExtra("run_full_scan", false);
+        boolean isFolderChange = getIntent().getBooleanExtra("is_folder_change", false);
+        loadMusic(runFullScan, isFolderChange);
         
         final SharedPreferences mSharedPreference= PreferenceManager.getDefaultSharedPreferences(this);
         Boolean passedPlayerAct=(mSharedPreference.getBoolean("playerActivitypass", false));
@@ -101,14 +127,36 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                 NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
             }
         }
+        
+        // Initialize executor for background tasks
+        executor = Executors.newSingleThreadExecutor();
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (executor != null && !executor.isShutdown()) {
+            executor.shutdown();
+        }
     }
 
-    private void loadMusic() {
+    private void loadMusic(boolean runFullScan, boolean isFolderChange) {
         String musicFolderPath = FolderSelectionActivity.getMusicFolderPath(this);
         if (musicFolderPath != null) {
             Log.d(TAG, "Loading music from: " + musicFolderPath);
-            musicFiles = getAllAudioFromFolder(this, musicFolderPath);
-            initViewPager();
+            
+            if (runFullScan) {
+                // Show progress dialog for initial scan or folder change
+                String title = isFolderChange ? "Scanning New Folder" : "Scanning Music Library";
+                loadMusicWithProgress(musicFolderPath, title);
+            } else {
+                // Quick load without progress dialog
+                musicFiles = getAllAudioFromFolder(this, musicFolderPath);
+                initViewPager();
+                
+                // Sync cache in background
+                syncCacheInBackground();
+            }
         } else {
             Log.e(TAG, "No music folder selected");
             Toast.makeText(this, "Please select a music folder", Toast.LENGTH_SHORT).show();
@@ -116,6 +164,345 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             Intent intent = new Intent(this, FolderSelectionActivity.class);
             startActivity(intent);
             finish();
+        }
+    }
+    
+    /**
+     * Load music with progress dialog for initial scan or folder change.
+     */
+    private void loadMusicWithProgress(String musicFolderPath, String title) {
+        showProgressDialog(title);
+        
+        if (executor == null || executor.isShutdown()) {
+            executor = Executors.newSingleThreadExecutor();
+        }
+        
+        executor.execute(() -> {
+            try {
+                updateProgress(0, 100, "Clearing old cache...");
+                
+                // Clear existing caches for fresh start
+                MusicCacheDatabase cache = MusicCacheDatabase.getInstance(this);
+                cache.clearAllCaches();
+                AlbumArtHelper.clearCache(this);
+                
+                updateProgress(10, 100, "Loading music files...");
+                
+                // Load music files
+                ArrayList<MusicFiles> newMusicFiles = getAllAudioFromFolder(this, musicFolderPath);
+                
+                updateProgress(20, 100, "Caching metadata...");
+                
+                // Cache song metadata with progress
+                int total = newMusicFiles.size();
+                for (int i = 0; i < total; i++) {
+                    MusicFiles song = newMusicFiles.get(i);
+                    cacheSongMetadata(cache, song);
+                    
+                    int progress = 20 + ((i * 40) / Math.max(total, 1));
+                    updateProgress(progress, 100, "Caching: " + song.getTitle());
+                }
+                
+                updateProgress(60, 100, "Caching album art...");
+                
+                // Cache album art with progress
+                cacheAlbumArtWithProgress(newMusicFiles, 60, 95);
+                
+                // Update static reference
+                musicFiles = newMusicFiles;
+                
+                updateProgress(100, 100, "Complete!");
+                
+                // Brief delay to show completion
+                Thread.sleep(500);
+                
+                dismissProgressDialog();
+                
+                // Initialize UI on main thread
+                runOnUiThread(() -> {
+                    initViewPager();
+                    Toast.makeText(this, "Found " + musicFiles.size() + " songs", Toast.LENGTH_SHORT).show();
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading music with progress", e);
+                dismissProgressDialog();
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Error loading music", Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+    }
+    
+    /**
+     * Sync the music cache in background.
+     * Detects file changes and updates the cache accordingly.
+     */
+    private void syncCacheInBackground() {
+        if (executor == null || executor.isShutdown()) {
+            executor = Executors.newSingleThreadExecutor();
+        }
+        
+        executor.execute(() -> {
+            try {
+                MusicCacheDatabase cache = MusicCacheDatabase.getInstance(this);
+                
+                // Get current cached song paths
+                Map<String, Long> cachedPaths = cache.getCachedSongPaths();
+                
+                int newSongs = 0;
+                int updatedSongs = 0;
+                int deletedSongs = 0;
+                
+                // Check for new or modified songs
+                if (musicFiles != null) {
+                    for (MusicFiles song : musicFiles) {
+                        String path = song.getPath();
+                        if (path == null) continue;
+                        
+                        File file = new File(path);
+                        if (!file.exists()) continue;
+                        
+                        Long cachedModified = cachedPaths.get(path);
+                        if (cachedModified == null) {
+                            // New song - add to cache
+                            cacheSongMetadata(cache, song);
+                            newSongs++;
+                        } else if (file.lastModified() != cachedModified) {
+                            // Modified song - update cache
+                            cacheSongMetadata(cache, song);
+                            // Invalidate album art cache for this folder
+                            File parentDir = file.getParentFile();
+                            if (parentDir != null) {
+                                cache.deleteCachedAlbumArt(parentDir.getAbsolutePath());
+                            }
+                            updatedSongs++;
+                        }
+                        // Remove from map to track deleted songs
+                        cachedPaths.remove(path);
+                    }
+                }
+                
+                // Delete songs that no longer exist
+                for (String deletedPath : cachedPaths.keySet()) {
+                    cache.deleteCachedSong(deletedPath);
+                    deletedSongs++;
+                }
+                
+                Log.d(TAG, "Cache sync complete - New: " + newSongs + ", Updated: " + updatedSongs + ", Deleted: " + deletedSongs);
+                
+                // Pre-populate album art cache for new albums in background
+                if (newSongs > 0 && musicFiles != null) {
+                    AlbumArtHelper.prePopulateCache(this, new ArrayList<>(musicFiles));
+                }
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error syncing cache", e);
+            }
+        });
+    }
+    
+    /**
+     * Cache song metadata with extended tag information.
+     */
+    private void cacheSongMetadata(MusicCacheDatabase cache, MusicFiles song) {
+        // Read extended tags
+        TagEditorHelper.AudioTags tags = TagEditorHelper.readTags(song.getPath());
+        cache.cacheSong(song, tags.albumArtist, tags.year);
+    }
+    
+    /**
+     * Show the main popup menu.
+     */
+    private void showMainMenu(View anchor) {
+        PopupMenu popupMenu = new PopupMenu(this, anchor);
+        popupMenu.inflate(R.menu.popup_main);
+        
+        popupMenu.setOnMenuItemClickListener(item -> {
+            int itemId = item.getItemId();
+            SharedPreferences.Editor editor = getSharedPreferences(MY_SORT_PREF, MODE_PRIVATE).edit();
+            
+            if (itemId == R.id.by_title) {
+                editor.putString("sorting", "sortByTitle");
+                editor.apply();
+                this.recreate();
+                return true;
+            } else if (itemId == R.id.by_date) {
+                editor.putString("sorting", "sortByDate");
+                editor.apply();
+                this.recreate();
+                return true;
+            } else if (itemId == R.id.by_size) {
+                editor.putString("sorting", "sortBySize");
+                editor.apply();
+                this.recreate();
+                return true;
+            } else if (itemId == R.id.rescan_folders) {
+                rescanFolders();
+                return true;
+            } else if (itemId == R.id.change_folder) {
+                Intent intent = new Intent(this, FolderSelectionActivity.class);
+                intent.putExtra("changing_folder", true);
+                startActivity(intent);
+                return true;
+            }
+            return false;
+        });
+        
+        popupMenu.show();
+    }
+    
+    /**
+     * Show progress dialog for caching.
+     */
+    private void showProgressDialog(String title) {
+        progressDialog = new Dialog(this);
+        progressDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        progressDialog.setContentView(R.layout.dialog_progress);
+        progressDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        progressDialog.setCancelable(false);
+        
+        TextView progressTitle = progressDialog.findViewById(R.id.progress_title);
+        progressMessage = progressDialog.findViewById(R.id.progress_message);
+        progressBar = progressDialog.findViewById(R.id.progress_bar);
+        progressPercent = progressDialog.findViewById(R.id.progress_percent);
+        
+        progressTitle.setText(title);
+        progressDialog.show();
+    }
+    
+    /**
+     * Update progress dialog.
+     */
+    private void updateProgress(int current, int total, String message) {
+        runOnUiThread(() -> {
+            if (progressDialog != null && progressDialog.isShowing()) {
+                int percent = total > 0 ? (current * 100) / total : 0;
+                progressBar.setProgress(percent);
+                progressPercent.setText(percent + "%");
+                progressMessage.setText(message);
+            }
+        });
+    }
+    
+    /**
+     * Dismiss progress dialog.
+     */
+    private void dismissProgressDialog() {
+        runOnUiThread(() -> {
+            if (progressDialog != null && progressDialog.isShowing()) {
+                progressDialog.dismiss();
+                progressDialog = null;
+            }
+        });
+    }
+    
+    /**
+     * Rescan folders - clears cache and reloads music with progress.
+     */
+    public void rescanFolders() {
+        showProgressDialog("Rescanning Library");
+        
+        if (executor == null || executor.isShutdown()) {
+            executor = Executors.newSingleThreadExecutor();
+        }
+        
+        executor.execute(() -> {
+            try {
+                updateProgress(0, 100, "Clearing cache...");
+                
+                // Clear all caches
+                MusicCacheDatabase cache = MusicCacheDatabase.getInstance(this);
+                cache.clearAllCaches();
+                AlbumArtHelper.clearCache(this);
+                
+                updateProgress(10, 100, "Loading music files...");
+                
+                // Get music folder path
+                String musicFolderPath = FolderSelectionActivity.getMusicFolderPath(this);
+                if (musicFolderPath != null) {
+                    // Reload music files
+                    ArrayList<MusicFiles> newMusicFiles = getAllAudioFromFolder(this, musicFolderPath);
+                    
+                    updateProgress(30, 100, "Caching metadata...");
+                    
+                    // Cache song metadata
+                    int total = newMusicFiles.size();
+                    for (int i = 0; i < total; i++) {
+                        MusicFiles song = newMusicFiles.get(i);
+                        cacheSongMetadata(cache, song);
+                        
+                        int progress = 30 + ((i * 40) / Math.max(total, 1));
+                        updateProgress(progress, 100, "Caching: " + song.getTitle());
+                    }
+                    
+                    updateProgress(70, 100, "Caching album art...");
+                    
+                    // Cache album art with progress
+                    cacheAlbumArtWithProgress(newMusicFiles, 70, 100);
+                    
+                    // Update static reference
+                    musicFiles = newMusicFiles;
+                }
+                
+                updateProgress(100, 100, "Complete!");
+                
+                // Brief delay to show completion
+                Thread.sleep(500);
+                
+                dismissProgressDialog();
+                
+                // Reload UI on main thread
+                runOnUiThread(() -> {
+                    initViewPager();
+                    Toast.makeText(this, "Rescan complete", Toast.LENGTH_SHORT).show();
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error during rescan", e);
+                dismissProgressDialog();
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Rescan failed", Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+    }
+    
+    /**
+     * Cache album art with progress updates.
+     */
+    private void cacheAlbumArtWithProgress(ArrayList<MusicFiles> songs, int startProgress, int endProgress) {
+        if (songs == null || songs.isEmpty()) return;
+        
+        java.util.Set<String> processedFolders = new java.util.HashSet<>();
+        MusicCacheDatabase cache = MusicCacheDatabase.getInstance(this);
+        
+        int total = songs.size();
+        int progressRange = endProgress - startProgress;
+        
+        for (int i = 0; i < total; i++) {
+            MusicFiles music = songs.get(i);
+            String path = music.getPath();
+            if (path == null) continue;
+            
+            java.io.File musicFile = new java.io.File(path);
+            java.io.File parentDir = musicFile.getParentFile();
+            if (parentDir == null) continue;
+            
+            String folderPath = parentDir.getAbsolutePath();
+            
+            // Skip if already processed
+            if (processedFolders.contains(folderPath)) continue;
+            processedFolders.add(folderPath);
+            
+            // Skip if already cached
+            if (cache.hasAlbumArtCache(folderPath)) continue;
+            
+            // Load and cache album art
+            byte[] art = AlbumArtHelper.getAlbumArtForAlbum(this, path);
+            
+            int progress = startProgress + ((i * progressRange) / Math.max(total, 1));
+            updateProgress(progress, 100, "Art: " + music.getAlbum());
         }
     }
 
@@ -344,6 +731,9 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             editor.putString("sorting", "sortBySize");
             editor.apply();
             this.recreate();
+        } else if (itemId == R.id.rescan_folders) {
+            // Rescan folders and refresh cache
+            rescanFolders();
         } else if (itemId == R.id.change_folder) {
             // Open folder selection activity
             Intent intent = new Intent(this, FolderSelectionActivity.class);

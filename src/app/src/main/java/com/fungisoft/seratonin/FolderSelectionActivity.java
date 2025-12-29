@@ -46,12 +46,21 @@ public class FolderSelectionActivity extends AppCompatActivity {
 
     private ActivityResultLauncher<Intent> folderPickerLauncher;
     private ActivityResultLauncher<Intent> manageStorageLauncher;
+    
+    // Track if folder was changed in this session
+    private boolean folderChangedThisSession = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_folder_selection);
+        
+        // If user is explicitly changing folder, we'll want a full scan
+        boolean isChangingFolder = getIntent().getBooleanExtra("changing_folder", false);
+        if (isChangingFolder) {
+            folderChangedThisSession = true;
+        }
 
         // Apply window insets
         ConstraintLayout container = findViewById(R.id.folder_selection_container);
@@ -169,6 +178,9 @@ public class FolderSelectionActivity extends AppCompatActivity {
                     .putString(KEY_MUSIC_FOLDER, folderPath)
                     .putBoolean(KEY_FOLDER_SELECTED, true)
                     .apply();
+            
+            // Mark that folder was changed this session
+            folderChangedThisSession = true;
             
             Toast.makeText(this, "Music folder set: " + folderPath, Toast.LENGTH_SHORT).show();
         } else {
@@ -289,8 +301,16 @@ public class FolderSelectionActivity extends AppCompatActivity {
     }
 
     private void proceedToMainActivity() {
+        proceedToMainActivity(folderChangedThisSession);
+    }
+    
+    private void proceedToMainActivity(boolean runFullScan) {
+        boolean isChangingFolder = getIntent().getBooleanExtra("changing_folder", false);
         Intent intent = new Intent(this, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        // Signal MainActivity to do a full rescan with progress if folder was just selected/changed
+        intent.putExtra("run_full_scan", runFullScan);
+        intent.putExtra("is_folder_change", isChangingFolder);
         startActivity(intent);
         finish();
     }
@@ -305,7 +325,7 @@ public class FolderSelectionActivity extends AppCompatActivity {
         
         // If not changing folder and everything is set up, auto-proceed
         if (!isChangingFolder && hasStoragePermission() && hasFolderSelected()) {
-            proceedToMainActivity();
+            proceedToMainActivity(false); // No full scan needed for auto-proceed
         }
     }
 

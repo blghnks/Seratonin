@@ -3,41 +3,34 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
-        android:title="search"
-        android:id="@+id/search_option"
-        android:icon="@android:drawable/ic_menu_search"
-        app:showAsAction="ifRoom"
-        app:actionViewClass="androidx.appcompat.widget.SearchView"/>
-
-    <item
-        android:title="Sort by"
         android:id="@+id/sort_options"
+        android:title="Sort by"
         app:showAsAction="never">
 
         <menu>
             <item
-                android:title="Title"
                 android:id="@+id/by_title"
+                android:title="Title"
                 app:showAsAction="never"/>
             <item
-                android:title="Date"
                 android:id="@+id/by_date"
+                android:title="Date"
                 app:showAsAction="never"/>
             <item
-                android:title="Size"
                 android:id="@+id/by_size"
+                android:title="Size"
                 app:showAsAction="never"/>
         </menu>
     </item>
 
     <item
-        android:title="Rescan Folders"
         android:id="@+id/rescan_folders"
+        android:title="Rescan Folders"
         app:showAsAction="never"/>
 
     <item
-        android:title="Change Music Folder"
         android:id="@+id/change_folder"
+        android:title="Change Music Folder"
         app:showAsAction="never"/>
 
 </menu>

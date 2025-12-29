@@ -11,17 +11,34 @@
     <!-- Top Header with App Name -->
     <TextView
         android:id="@+id/app_title"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/spacing_md"
         android:layout_marginTop="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
         android:fontFamily="sans-serif-medium"
         android:text="Seratonin"
         android:textColor="@color/text_primary_dark"
         android:textSize="@dimen/text_title_large"
         android:textStyle="bold"
+        app:layout_constraintEnd_toStartOf="@+id/menu_button"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Menu Button -->
+    <ImageView
+        android:id="@+id/menu_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginTop="@dimen/spacing_xs"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Menu"
+        android:padding="12dp"
+        android:src="@drawable/ic_baseline_more"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:tint="@color/text_primary_dark" />
 
     <!-- Tab Layout for Artists/Albums/Songs - evenly distributed -->
     <com.google.android.material.tabs.TabLayout

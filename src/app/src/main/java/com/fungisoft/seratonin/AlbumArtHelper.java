@@ -64,8 +64,8 @@ public class AlbumArtHelper {
     }
 
     /**
-     * Get album art for a single song/track.
-     * Song case: checks embedded artwork first, then falls back to external folder art.
+     * Get album art for a single song/track with caching support.
+     * Song case: checks cache first, then embedded artwork, then external folder art.
      * Use this for song lists, now playing, notifications, etc.
      *
      * @param context Application context for MediaStore access
@@ -77,6 +77,54 @@ public class AlbumArtHelper {
             return null;
         }
 
+        // Get folder path for cache lookup
+        java.io.File musicFile = new java.io.File(musicFilePath);
+        java.io.File parentDir = musicFile.getParentFile();
+        String folderPath = parentDir != null ? parentDir.getAbsolutePath() : null;
+
+        // Try cache first
+        if (folderPath != null) {
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            byte[] cachedArt = cache.getCachedAlbumArt(folderPath);
+            if (cachedArt != null) {
+                return cachedArt;
+            }
+        }
+
+        // First, try embedded artwork
+        byte[] embeddedArt = getEmbeddedAlbumArt(musicFilePath);
+        if (embeddedArt != null) {
+            // Cache it
+            if (folderPath != null) {
+                MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+                cache.cacheAlbumArt(folderPath, embeddedArt, "embedded", musicFilePath);
+            }
+            return embeddedArt;
+        }
+
+        // Fallback to external artwork
+        byte[] externalArt = getExternalAlbumArtUncached(context, musicFilePath);
+        if (externalArt != null && folderPath != null) {
+            // Cache it
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            cache.cacheAlbumArt(folderPath, externalArt, "external", musicFilePath);
+        }
+        return externalArt;
+    }
+
+    /**
+     * Get album art for a single song/track without using cache.
+     * Use this when you need fresh data or for cache population.
+     *
+     * @param context Application context for MediaStore access
+     * @param musicFilePath The absolute path to the music file
+     * @return byte[] of the image data, or null if no artwork found
+     */
+    public static byte[] getAlbumArtForSongUncached(Context context, String musicFilePath) {
+        if (musicFilePath == null || musicFilePath.isEmpty()) {
+            return null;
+        }
+
         // First, try embedded artwork
         byte[] embeddedArt = getEmbeddedAlbumArt(musicFilePath);
         if (embeddedArt != null) {
@@ -84,12 +132,12 @@ public class AlbumArtHelper {
         }
 
         // Fallback to external artwork
-        return getExternalAlbumArt(context, musicFilePath);
+        return getExternalAlbumArtUncached(context, musicFilePath);
     }
 
     /**
-     * Get album art for album-level displays (album header, album details).
-     * Album case: searches for external artwork first, then falls back to embedded.
+     * Get album art for album-level displays (album header, album details) with caching.
+     * Album case: checks cache first, then external artwork, then embedded.
      * Use this when displaying art for an entire album, not a single song.
      *
      * @param context Application context for MediaStore access
@@ -101,19 +149,44 @@ public class AlbumArtHelper {
             return null;
         }
 
+        // Get folder path for cache lookup
+        java.io.File musicFile = new java.io.File(musicFilePath);
+        java.io.File parentDir = musicFile.getParentFile();
+        String folderPath = parentDir != null ? parentDir.getAbsolutePath() : null;
+
+        // Try cache first
+        if (folderPath != null) {
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            byte[] cachedArt = cache.getCachedAlbumArt(folderPath);
+            if (cachedArt != null) {
+                return cachedArt;
+            }
+        }
+
         // First, try external artwork
-        byte[] externalArt = getExternalAlbumArt(context, musicFilePath);
+        byte[] externalArt = getExternalAlbumArtUncached(context, musicFilePath);
         if (externalArt != null) {
+            // Cache it
+            if (folderPath != null) {
+                MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+                cache.cacheAlbumArt(folderPath, externalArt, "external", musicFilePath);
+            }
             return externalArt;
         }
 
         // Fallback to embedded artwork
-        return getEmbeddedAlbumArt(musicFilePath);
+        byte[] embeddedArt = getEmbeddedAlbumArt(musicFilePath);
+        if (embeddedArt != null && folderPath != null) {
+            // Cache it
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            cache.cacheAlbumArt(folderPath, embeddedArt, "embedded", musicFilePath);
+        }
+        return embeddedArt;
     }
 
     /**
-     * Get album art for album grid views.
-     * Optimized case: if external artwork exists, returns it and skips embedded extraction.
+     * Get album art for album grid views with caching.
+     * Optimized case: checks cache first, then if external artwork exists, returns it.
      * This is more efficient for grid views with many items.
      *
      * @param context Application context for MediaStore access
@@ -125,20 +198,45 @@ public class AlbumArtHelper {
             return new AlbumArtResult(null, false);
         }
 
+        // Get folder path for cache lookup
+        java.io.File musicFile = new java.io.File(musicFilePath);
+        java.io.File parentDir = musicFile.getParentFile();
+        String folderPath = parentDir != null ? parentDir.getAbsolutePath() : null;
+
+        // Try cache first
+        if (folderPath != null) {
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            byte[] cachedArt = cache.getCachedAlbumArt(folderPath);
+            if (cachedArt != null) {
+                return new AlbumArtResult(cachedArt, true);
+            }
+        }
+
         // First, try external artwork
-        byte[] externalArt = getExternalAlbumArt(context, musicFilePath);
+        byte[] externalArt = getExternalAlbumArtUncached(context, musicFilePath);
         if (externalArt != null) {
+            // Cache it
+            if (folderPath != null) {
+                MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+                cache.cacheAlbumArt(folderPath, externalArt, "external", musicFilePath);
+            }
             // External found - skip embedded extraction entirely
             return new AlbumArtResult(externalArt, true);
         }
 
         // No external art - fall back to embedded
         byte[] embeddedArt = getEmbeddedAlbumArt(musicFilePath);
+        if (embeddedArt != null && folderPath != null) {
+            // Cache it
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            cache.cacheAlbumArt(folderPath, embeddedArt, "embedded", musicFilePath);
+        }
         return new AlbumArtResult(embeddedArt, false);
     }
 
     /**
      * Search for external album art file in the same directory as the music file.
+     * This is the cached version that checks the database first.
      * 
      * Note: Files like "albumart.jpg", "cover.jpg", "folder.jpg" are intentionally
      * excluded from MediaStore by Android (they're hidden from gallery). Therefore,
@@ -149,6 +247,45 @@ public class AlbumArtHelper {
      * @return byte[] of the external image data, or null if not found
      */
     public static byte[] getExternalAlbumArt(Context context, String musicFilePath) {
+        if (musicFilePath == null || musicFilePath.isEmpty()) {
+            return null;
+        }
+
+        // Get folder path for cache lookup
+        java.io.File musicFile = new java.io.File(musicFilePath);
+        java.io.File parentDir = musicFile.getParentFile();
+        String folderPath = parentDir != null ? parentDir.getAbsolutePath() : null;
+
+        // Try cache first
+        if (folderPath != null) {
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            byte[] cachedArt = cache.getCachedAlbumArt(folderPath);
+            if (cachedArt != null) {
+                return cachedArt;
+            }
+        }
+
+        // No cache - load from file system
+        byte[] artData = getExternalAlbumArtUncached(context, musicFilePath);
+        
+        // Cache the result
+        if (artData != null && folderPath != null) {
+            MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+            cache.cacheAlbumArt(folderPath, artData, "external", musicFilePath);
+        }
+        
+        return artData;
+    }
+
+    /**
+     * Search for external album art file without using cache.
+     * Use this for cache population or when fresh data is needed.
+     *
+     * @param context Application context for MediaStore access
+     * @param musicFilePath The absolute path to the music file
+     * @return byte[] of the external image data, or null if not found
+     */
+    public static byte[] getExternalAlbumArtUncached(Context context, String musicFilePath) {
         if (musicFilePath == null || musicFilePath.isEmpty()) {
             return null;
         }
@@ -762,5 +899,71 @@ public class AlbumArtHelper {
             this.artData = artData;
             this.isExternal = isExternal;
         }
+    }
+
+    // ==================== Cache Management Methods ====================
+
+    /**
+     * Clear all album art cache.
+     * Use this when rescanning folders or resetting the app.
+     *
+     * @param context Application context
+     */
+    public static void clearCache(Context context) {
+        MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+        cache.clearAlbumArtCache();
+        Log.d(TAG, "Album art cache cleared");
+    }
+
+    /**
+     * Invalidate cache for a specific folder.
+     * Use this when album art in a folder has changed.
+     *
+     * @param context Application context
+     * @param folderPath The folder path to invalidate
+     */
+    public static void invalidateCacheForFolder(Context context, String folderPath) {
+        if (folderPath == null) return;
+        MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+        cache.deleteCachedAlbumArt(folderPath);
+        Log.d(TAG, "Cache invalidated for folder: " + folderPath);
+    }
+
+    /**
+     * Pre-populate the cache for a list of music files.
+     * Run this in a background thread for better performance.
+     *
+     * @param context Application context
+     * @param musicFiles List of music files to cache art for
+     */
+    public static void prePopulateCache(Context context, java.util.List<MusicFiles> musicFiles) {
+        if (musicFiles == null || musicFiles.isEmpty()) return;
+
+        java.util.Set<String> processedFolders = new java.util.HashSet<>();
+        MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+
+        for (MusicFiles music : musicFiles) {
+            String path = music.getPath();
+            if (path == null) continue;
+
+            java.io.File musicFile = new java.io.File(path);
+            java.io.File parentDir = musicFile.getParentFile();
+            if (parentDir == null) continue;
+
+            String folderPath = parentDir.getAbsolutePath();
+
+            // Skip if already processed or cached
+            if (processedFolders.contains(folderPath)) continue;
+            if (cache.hasAlbumArtCache(folderPath)) {
+                processedFolders.add(folderPath);
+                continue;
+            }
+
+            // Try to get and cache album art
+            byte[] art = getAlbumArtForAlbum(context, path);
+            processedFolders.add(folderPath);
+        }
+
+        Log.d(TAG, "Pre-populated cache for " + processedFolders.size() + " folders");
     }
 }
