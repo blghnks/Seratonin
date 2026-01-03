@@ -55,7 +55,7 @@ import static com.fungisoft.seratonin.MainActivity.repeatBoolean;
 import static com.fungisoft.seratonin.MainActivity.shuffleBoolean;
 import static com.fungisoft.seratonin.MusicAdapter.mFiles;
 
-public class PlayerActivity extends AppCompatActivity implements ActionPlaying, ServiceConnection, 
+public class PlayerActivity extends AppCompatActivity implements ActionPlaying, ServiceConnection,
         QueueAdapter.OnQueueItemClickListener {
 
     TextView song_name, artist_name, duration_played, duration_total, album_name, textNowplaying;
@@ -571,6 +571,50 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     private void getIntenMethod() {
         String sender = getIntent().getStringExtra("sender");
         String musicAdapt = getIntent().getStringExtra("musicAdapter");
+        boolean fromPlaylist = getIntent().getBooleanExtra("fromPlaylist", false);
+        
+        // Coming from M3U playlist import - use the queue that was already set
+        if (fromPlaylist) {
+            position = getIntent().getIntExtra("position", 0);
+            // listSongs was already set by MainActivity before launching
+            
+            if (listSongs == null || listSongs.isEmpty()) {
+                // Fallback: load from queue database
+                QueueDatabase queueDb = QueueDatabase.getInstance(this);
+                listSongs = queueDb.loadQueue();
+                position = queueDb.getCurrentIndex();
+            }
+            
+            if (listSongs == null || listSongs.isEmpty()) {
+                finish();
+                return;
+            }
+            
+            // Clear original queue order when new playlist is loaded
+            originalQueueOrder = null;
+            
+            // Update queue UI
+            if (queueAdapter != null) {
+                queueAdapter.updateQueue(listSongs);
+                queueAdapter.setCurrentPlayingIndex(position);
+                updateQueueUI();
+            }
+            
+            NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+            playPauseBtn.setImageResource(R.drawable.ic_pause);
+            uri = Uri.parse(listSongs.get(position).getPath());
+            
+            // Stop any existing playback and start new
+            if (musicService != null) {
+                musicService.stop();
+                musicService.release();
+            }
+            
+            Intent intent = new Intent(this, MusicService.class);
+            intent.putExtra("servicePosition", position);
+            startService(intent);
+            return;
+        }
         
         // Coming from now playing bar - use existing service state
         if (sender != null && sender.equals("nowPlayingBar")) {

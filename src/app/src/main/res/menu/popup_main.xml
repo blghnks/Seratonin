@@ -29,6 +29,11 @@
         app:showAsAction="never"/>
 
     <item
+        android:id="@+id/import_m3u_playlist"
+        android:title="Import M3U to Queue"
+        app:showAsAction="never"/>
+
+    <item
         android:id="@+id/change_folder"
         android:title="Change Music Folder"
         app:showAsAction="never"/>

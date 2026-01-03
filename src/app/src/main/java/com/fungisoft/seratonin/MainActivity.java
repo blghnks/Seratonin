@@ -1,5 +1,7 @@
 package com.fungisoft.seratonin;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
@@ -79,10 +81,26 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     private ProgressBar progressBar;
     private TextView progressMessage;
     private TextView progressPercent;
+    
+    // M3U import launcher
+    private ActivityResultLauncher<Intent> m3uImportLauncher;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        // Initialize M3U import launcher
+        m3uImportLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+                    Uri uri = result.getData().getData();
+                    if (uri != null) {
+                        importM3UPlaylist(uri);
+                    }
+                }
+            }
+        );
         
         // Check if setup is complete (permission + folder selected)
         if (!FolderSelectionActivity.isSetupComplete(this)) {
@@ -340,6 +358,9 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             } else if (itemId == R.id.rescan_folders) {
                 rescanFolders();
                 return true;
+            } else if (itemId == R.id.import_m3u_playlist) {
+                openM3UFilePicker();
+                return true;
             } else if (itemId == R.id.change_folder) {
                 Intent intent = new Intent(this, FolderSelectionActivity.class);
                 intent.putExtra("changing_folder", true);
@@ -393,6 +414,96 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             if (progressDialog != null && progressDialog.isShowing()) {
                 progressDialog.dismiss();
                 progressDialog = null;
+            }
+        });
+    }
+    
+    /**
+     * Open file picker for selecting M3U playlist file.
+     */
+    private void openM3UFilePicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        // M3U files might have various MIME types
+        String[] mimeTypes = {"audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", 
+                              "application/x-mpegurl", "text/plain", "*/*"};
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+        
+        try {
+            m3uImportLauncher.launch(intent);
+        } catch (Exception e) {
+            Log.e(TAG, "Error launching file picker", e);
+            Toast.makeText(this, "Could not open file picker", Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * Import M3U playlist and replace the current queue.
+     */
+    private void importM3UPlaylist(Uri uri) {
+        showProgressDialog("Importing Playlist");
+        
+        if (executor == null || executor.isShutdown()) {
+            executor = Executors.newSingleThreadExecutor();
+        }
+        
+        executor.execute(() -> {
+            try {
+                updateProgress(10, 100, "Reading playlist...");
+                
+                // Get base directory for relative paths (use music folder)
+                String baseDir = FolderSelectionActivity.getMusicFolderPath(this);
+                
+                // Import songs from M3U
+                QueueDatabase queueDb = QueueDatabase.getInstance(this);
+                ArrayList<MusicFiles> importedSongs = queueDb.importFromM3UUri(uri, this, baseDir);
+                
+                if (importedSongs == null || importedSongs.isEmpty()) {
+                    dismissProgressDialog();
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "No valid songs found in playlist", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
+                
+                updateProgress(50, 100, "Replacing queue with " + importedSongs.size() + " songs...");
+                
+                // Clear existing queue and save new one
+                queueDb.clearQueue();
+                queueDb.saveQueue(importedSongs);
+                queueDb.saveCurrentIndex(0);
+                
+                // Update PlayerActivity's listSongs
+                runOnUiThread(() -> {
+                    PlayerActivity.listSongs.clear();
+                    PlayerActivity.listSongs.addAll(importedSongs);
+                });
+                
+                updateProgress(100, 100, "Complete!");
+                
+                // Brief delay to show completion
+                Thread.sleep(500);
+                
+                dismissProgressDialog();
+                
+                final int count = importedSongs.size();
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Loaded playlist with " + count + " songs", Toast.LENGTH_SHORT).show();
+                    
+                    // Launch PlayerActivity to start playing from the first song
+                    Intent intent = new Intent(this, PlayerActivity.class);
+                    intent.putExtra("position", 0);
+                    intent.putExtra("fromPlaylist", true);
+                    startActivity(intent);
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error importing M3U playlist", e);
+                dismissProgressDialog();
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Failed to import playlist", Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
