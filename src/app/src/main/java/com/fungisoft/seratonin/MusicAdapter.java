@@ -26,6 +26,9 @@ import java.util.ArrayList;
 
 public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder> {
 
+    // Note: This is static for legacy cross-component access from PlayerActivity.
+    // A proper fix would involve a shared MusicRepository singleton, but that requires
+    // extensive refactoring. When accessing from other classes, always null-check.
     static ArrayList<MusicFiles> mFiles;
     private final Context mContext;
 
@@ -49,17 +52,16 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
         holder.artist_name.setText(mFiles.get(position).getArtist());
         int totalDuration = Integer.parseInt(mFiles.get(position).getDuration()) / 1000;
         holder.duration.setText(formatTime(totalDuration));
-        // Use song art loading: embedded first, then external fallback
-        byte[] image = AlbumArtHelper.getAlbumArtForSong(mContext, mFiles.get(position).getPath());
-        if (image != null) {
-            Glide.with(mContext).asBitmap()
-                    .load(image)
-                    .into(holder.album_art);
-        } else {
-            Glide.with(mContext)
-                    .load(R.drawable.musicicon)
-                    .into(holder.album_art);
-        }
+        
+        // Use async art loading to avoid blocking the UI thread during scrolling
+        // This is the key fix for RecyclerView jank/stutter
+        AlbumArtLoader.getInstance().loadAlbumArtForSong(
+                mContext, 
+                mFiles.get(position).getPath(), 
+                holder.album_art,
+                R.drawable.musicicon
+        );
+        
         holder.itemView.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION) return;
@@ -85,7 +87,9 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
             intent.putExtra("musicAdapter", "MusicAdapt");
             intent.putExtra("positionMfiles", adapterPosition);
             mContext.startActivity(intent);
-            NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+            if (NowPlayingFragmentBottom.playPauseBtn != null) {
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+            }
         });
         holder.menuMore.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
@@ -103,18 +107,13 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
         });
     }
 
+    /**
+     * Format seconds into mm:ss format.
+     * @deprecated Use {@link TimeFormatter#formatTime(int)} instead.
+     */
+    @Deprecated
     private String formatTime(int mCurrentPosition) {
-        String totalout;
-        String totalNew;
-        String seconds = String.valueOf(mCurrentPosition % 60);
-        String minutes = String.valueOf(mCurrentPosition / 60);
-        totalout = minutes + ":" + seconds;
-        totalNew = minutes + ":" + "0" + seconds;
-        if (seconds.length() == 1) {
-            return totalNew;
-        } else {
-            return totalout;
-        }
+        return TimeFormatter.formatTime(mCurrentPosition);
     }
 
     private void deleteFile(int position, View v) {

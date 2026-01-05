@@ -27,7 +27,7 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
 
     private static final String TAG = "MusicCacheDatabase";
     private static final String DATABASE_NAME = "music_cache.db";
-    private static final int DATABASE_VERSION = 2; // Incremented for schema change
+    private static final int DATABASE_VERSION = 3; // Incremented for song vs album art separation
 
     // Singleton instance
     private static MusicCacheDatabase instance;
@@ -61,6 +61,8 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
     public static final String COLUMN_ART_SOURCE = "art_source"; // "embedded" or "external"
     public static final String COLUMN_SONG_PATH = "song_path"; // Reference song for embedded art
     public static final String COLUMN_ART_LAST_MODIFIED = "last_modified";
+    public static final String COLUMN_CACHE_KEY = "cache_key"; // Unique key: "song:path" or "album:folder"
+    public static final String COLUMN_SOURCE_FILE_MODIFIED = "source_file_modified"; // Last modified time of source file
 
     // Create songs table SQL
     private static final String CREATE_SONGS_TABLE =
@@ -78,13 +80,16 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
                     ")";
 
     // Create album art table SQL (stores file path instead of BLOB)
+    // COLUMN_CACHE_KEY is now the unique key: "song:/path/to/file.mp3" or "album:/path/to/folder"
     private static final String CREATE_ALBUM_ART_TABLE =
             "CREATE TABLE " + TABLE_ALBUM_ART + " (" +
                     COLUMN_ART_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                    COLUMN_FOLDER_PATH + " TEXT UNIQUE NOT NULL, " +
+                    COLUMN_CACHE_KEY + " TEXT UNIQUE NOT NULL, " +
+                    COLUMN_FOLDER_PATH + " TEXT, " +
                     COLUMN_ART_FILE_PATH + " TEXT, " +
                     COLUMN_ART_SOURCE + " TEXT, " +
                     COLUMN_SONG_PATH + " TEXT, " +
+                    COLUMN_SOURCE_FILE_MODIFIED + " INTEGER, " +
                     COLUMN_ART_LAST_MODIFIED + " INTEGER" +
                     ")";
 
@@ -93,8 +98,14 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
             "CREATE INDEX idx_songs_path ON " + TABLE_SONGS + "(" + COLUMN_PATH + ")";
     private static final String CREATE_ALBUM_INDEX =
             "CREATE INDEX idx_songs_album ON " + TABLE_SONGS + "(" + COLUMN_ALBUM + ")";
+    private static final String CREATE_CACHE_KEY_INDEX =
+            "CREATE INDEX idx_album_art_cache_key ON " + TABLE_ALBUM_ART + "(" + COLUMN_CACHE_KEY + ")";
     private static final String CREATE_FOLDER_INDEX =
             "CREATE INDEX idx_album_art_folder ON " + TABLE_ALBUM_ART + "(" + COLUMN_FOLDER_PATH + ")";
+    
+    // Cache key prefixes for distinguishing song vs album art
+    public static final String CACHE_KEY_SONG_PREFIX = "song:";
+    public static final String CACHE_KEY_ALBUM_PREFIX = "album:";
 
     private MusicCacheDatabase(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
@@ -107,8 +118,30 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
     public static synchronized MusicCacheDatabase getInstance(Context context) {
         if (instance == null) {
             instance = new MusicCacheDatabase(context.getApplicationContext());
+            // Enable WAL mode for better concurrent read/write performance
+            // This must be done before any other database operations
+            SQLiteDatabase db = instance.getWritableDatabase();
+            db.enableWriteAheadLogging();
+            
+            // Set PRAGMA options for performance using rawQuery (required on Android)
+            // These return result sets, so we must use rawQuery and close the cursor
+            Cursor cursor;
+            cursor = db.rawQuery("PRAGMA cache_size = 10000", null);
+            cursor.close();
+            cursor = db.rawQuery("PRAGMA synchronous = NORMAL", null);
+            cursor.close();
         }
         return instance;
+    }
+    
+    /**
+     * Configure database for optimal performance.
+     * Called when database is opened.
+     */
+    @Override
+    public void onConfigure(SQLiteDatabase db) {
+        super.onConfigure(db);
+        // WAL mode and PRAGMAs are set in getInstance() to avoid issues with onOpen
     }
     
     /**
@@ -146,6 +179,7 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
         db.execSQL(CREATE_ALBUM_ART_TABLE);
         db.execSQL(CREATE_PATH_INDEX);
         db.execSQL(CREATE_ALBUM_INDEX);
+        db.execSQL(CREATE_CACHE_KEY_INDEX);
         db.execSQL(CREATE_FOLDER_INDEX);
         Log.d(TAG, "Database created successfully");
     }
@@ -206,16 +240,22 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
      */
     public CachedSongMetadata getCachedSong(String path) {
         SQLiteDatabase db = getReadableDatabase();
-        Cursor cursor = db.query(TABLE_SONGS,
-                null,
-                COLUMN_PATH + " = ?",
-                new String[]{path},
-                null, null, null);
-
+        Cursor cursor = null;
         CachedSongMetadata metadata = null;
-        if (cursor != null && cursor.moveToFirst()) {
-            metadata = cursorToMetadata(cursor);
-            cursor.close();
+        try {
+            cursor = db.query(TABLE_SONGS,
+                    null,
+                    COLUMN_PATH + " = ?",
+                    new String[]{path},
+                    null, null, null);
+
+            if (cursor != null && cursor.moveToFirst()) {
+                metadata = cursorToMetadata(cursor);
+            }
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
         }
         return metadata;
     }
@@ -311,16 +351,42 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
     // ==================== Album Art Methods ====================
 
     /**
-     * Cache album art for a folder by saving to file and storing path in database.
+     * Generate a cache key for song-level art (unique per track).
+     * @param songPath Path to the music file
+     * @return Cache key in format "song:/path/to/file.mp3"
      */
-    public void cacheAlbumArt(String folderPath, byte[] artData, String source, String songPath) {
-        if (artData == null || folderPath == null) {
+    public static String getSongCacheKey(String songPath) {
+        return CACHE_KEY_SONG_PREFIX + songPath;
+    }
+    
+    /**
+     * Generate a cache key for album-level art (one per folder).
+     * @param folderPath Path to the folder
+     * @return Cache key in format "album:/path/to/folder"
+     */
+    public static String getAlbumCacheKey(String folderPath) {
+        return CACHE_KEY_ALBUM_PREFIX + folderPath;
+    }
+
+    /**
+     * Cache album art with a specific cache key.
+     * This allows separate caching for song-level vs album-level art.
+     * 
+     * @param cacheKey Unique cache key (use getSongCacheKey or getAlbumCacheKey)
+     * @param artData The art image data
+     * @param source "embedded" or "external"
+     * @param songPath Reference song path (for embedded art tracking)
+     * @param sourceFileModified Last modified time of the source file (for invalidation)
+     */
+    public void cacheAlbumArtWithKey(String cacheKey, String folderPath, byte[] artData, 
+                                      String source, String songPath, long sourceFileModified) {
+        if (artData == null || cacheKey == null) {
             return;
         }
 
         try {
-            // Save art data to file
-            String filename = generateArtFilename(folderPath);
+            // Save art data to file using cache key for unique filename
+            String filename = generateArtFilename(cacheKey);
             File artFile = new File(getArtCacheDir(), filename);
             
             try (FileOutputStream fos = new FileOutputStream(artFile)) {
@@ -330,10 +396,12 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
             // Store file path in database
             SQLiteDatabase db = getWritableDatabase();
             ContentValues values = new ContentValues();
+            values.put(COLUMN_CACHE_KEY, cacheKey);
             values.put(COLUMN_FOLDER_PATH, folderPath);
             values.put(COLUMN_ART_FILE_PATH, artFile.getAbsolutePath());
             values.put(COLUMN_ART_SOURCE, source);
             values.put(COLUMN_SONG_PATH, songPath);
+            values.put(COLUMN_SOURCE_FILE_MODIFIED, sourceFileModified);
             values.put(COLUMN_ART_LAST_MODIFIED, System.currentTimeMillis());
 
             db.insertWithOnConflict(TABLE_ALBUM_ART, null, values, SQLiteDatabase.CONFLICT_REPLACE);
@@ -344,21 +412,33 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
     }
 
     /**
-     * Get cached album art for a folder by reading from file.
+     * Get cached album art by cache key.
+     * 
+     * @param cacheKey Unique cache key (use getSongCacheKey or getAlbumCacheKey)
+     * @param expectedSourceModified Expected last modified time of source file (0 to skip validation)
+     * @return Art data bytes, or null if not cached or cache is stale
      */
-    public byte[] getCachedAlbumArt(String folderPath) {
+    public byte[] getCachedAlbumArtByKey(String cacheKey, long expectedSourceModified) {
         try {
             SQLiteDatabase db = getReadableDatabase();
             Cursor cursor = db.query(TABLE_ALBUM_ART,
-                    new String[]{COLUMN_ART_FILE_PATH},
-                    COLUMN_FOLDER_PATH + " = ?",
-                    new String[]{folderPath},
+                    new String[]{COLUMN_ART_FILE_PATH, COLUMN_SOURCE_FILE_MODIFIED},
+                    COLUMN_CACHE_KEY + " = ?",
+                    new String[]{cacheKey},
                     null, null, null);
 
             byte[] artData = null;
             if (cursor != null && cursor.moveToFirst()) {
                 String artFilePath = cursor.getString(0);
+                long cachedSourceModified = cursor.getLong(1);
                 cursor.close();
+                
+                // Validate cache freshness if expectedSourceModified is provided
+                if (expectedSourceModified > 0 && cachedSourceModified != expectedSourceModified) {
+                    // Cache is stale - source file has changed
+                    deleteCachedAlbumArtByKey(cacheKey);
+                    return null;
+                }
                 
                 if (artFilePath != null) {
                     artData = readArtFile(artFilePath);
@@ -368,10 +448,103 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
             }
             return artData;
         } catch (Exception e) {
-            // Handle case where old database schema exists or other errors
-            Log.e(TAG, "Error getting cached album art, may need database upgrade", e);
+            Log.e(TAG, "Error getting cached album art by key", e);
             return null;
         }
+    }
+    
+    /**
+     * Check if album art is cached for a specific cache key.
+     */
+    public boolean hasCachedArtByKey(String cacheKey) {
+        try {
+            SQLiteDatabase db = getReadableDatabase();
+            Cursor cursor = db.query(TABLE_ALBUM_ART,
+                    new String[]{COLUMN_ART_FILE_PATH},
+                    COLUMN_CACHE_KEY + " = ?",
+                    new String[]{cacheKey},
+                    null, null, null);
+
+            boolean exists = false;
+            if (cursor != null && cursor.moveToFirst()) {
+                String artFilePath = cursor.getString(0);
+                if (artFilePath != null) {
+                    exists = new File(artFilePath).exists();
+                }
+                cursor.close();
+            } else if (cursor != null) {
+                cursor.close();
+            }
+            return exists;
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking album art cache by key", e);
+            return false;
+        }
+    }
+    
+    /**
+     * Delete cached album art by cache key.
+     */
+    public void deleteCachedAlbumArtByKey(String cacheKey) {
+        try {
+            SQLiteDatabase db = getWritableDatabase();
+            
+            // First get the file path to delete the file
+            Cursor cursor = db.query(TABLE_ALBUM_ART,
+                    new String[]{COLUMN_ART_FILE_PATH},
+                    COLUMN_CACHE_KEY + " = ?",
+                    new String[]{cacheKey},
+                    null, null, null);
+            
+            if (cursor != null && cursor.moveToFirst()) {
+                String artFilePath = cursor.getString(0);
+                cursor.close();
+                
+                // Delete the file
+                if (artFilePath != null) {
+                    File artFile = new File(artFilePath);
+                    if (artFile.exists()) {
+                        artFile.delete();
+                    }
+                }
+            } else if (cursor != null) {
+                cursor.close();
+            }
+            
+            // Delete database entry
+            db.delete(TABLE_ALBUM_ART, COLUMN_CACHE_KEY + " = ?", new String[]{cacheKey});
+        } catch (Exception e) {
+            Log.e(TAG, "Error deleting cached album art by key", e);
+        }
+    }
+
+    /**
+     * Cache album art for a folder by saving to file and storing path in database.
+     * @deprecated Use cacheAlbumArtWithKey for context-aware caching
+     */
+    @Deprecated
+    public void cacheAlbumArt(String folderPath, byte[] artData, String source, String songPath) {
+        // Use album-level cache key for backward compatibility
+        String cacheKey = getAlbumCacheKey(folderPath);
+        long sourceModified = 0;
+        if (songPath != null) {
+            File sourceFile = new File(songPath);
+            if (sourceFile.exists()) {
+                sourceModified = sourceFile.lastModified();
+            }
+        }
+        cacheAlbumArtWithKey(cacheKey, folderPath, artData, source, songPath, sourceModified);
+    }
+
+    /**
+     * Get cached album art for a folder by reading from file.
+     * @deprecated Use getCachedAlbumArtByKey for context-aware caching
+     */
+    @Deprecated
+    public byte[] getCachedAlbumArt(String folderPath) {
+        // Try album-level cache key for backward compatibility
+        String cacheKey = getAlbumCacheKey(folderPath);
+        return getCachedAlbumArtByKey(cacheKey, 0);
     }
     
     /**
@@ -400,67 +573,65 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
 
     /**
      * Check if album art is cached for a folder.
+     * @deprecated Use hasCachedArtByKey for context-aware cache checking
      */
+    @Deprecated
     public boolean hasAlbumArtCache(String folderPath) {
-        try {
-            SQLiteDatabase db = getReadableDatabase();
-            Cursor cursor = db.query(TABLE_ALBUM_ART,
-                    new String[]{COLUMN_ART_FILE_PATH},
-                    COLUMN_FOLDER_PATH + " = ?",
-                    new String[]{folderPath},
-                    null, null, null);
-
-            boolean exists = false;
-            if (cursor != null && cursor.moveToFirst()) {
-                String artFilePath = cursor.getString(0);
-                // Also verify the file exists
-                if (artFilePath != null) {
-                    exists = new File(artFilePath).exists();
-                }
-                cursor.close();
-            } else if (cursor != null) {
-                cursor.close();
-            }
-            return exists;
-        } catch (Exception e) {
-            Log.e(TAG, "Error checking album art cache", e);
-            return false;
-        }
+        // Check album-level cache for backward compatibility
+        return hasCachedArtByKey(getAlbumCacheKey(folderPath));
     }
 
     /**
      * Delete cached album art for a folder (both file and database entry).
+     * This deletes ALL cached art entries for the folder (both song and album level).
      */
     public void deleteCachedAlbumArt(String folderPath) {
         try {
             SQLiteDatabase db = getWritableDatabase();
             
-            // First get the file path to delete the file
+            // Get all art file paths for this folder
             Cursor cursor = db.query(TABLE_ALBUM_ART,
-                    new String[]{COLUMN_ART_FILE_PATH},
+                    new String[]{COLUMN_ART_FILE_PATH, COLUMN_CACHE_KEY},
                     COLUMN_FOLDER_PATH + " = ?",
                     new String[]{folderPath},
                     null, null, null);
             
-            if (cursor != null && cursor.moveToFirst()) {
-                String artFilePath = cursor.getString(0);
-                cursor.close();
-                
-                // Delete the file
-                if (artFilePath != null) {
-                    File artFile = new File(artFilePath);
-                    if (artFile.exists()) {
-                        artFile.delete();
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    String artFilePath = cursor.getString(0);
+                    // Delete the file
+                    if (artFilePath != null) {
+                        File artFile = new File(artFilePath);
+                        if (artFile.exists()) {
+                            artFile.delete();
+                        }
                     }
                 }
-            } else if (cursor != null) {
                 cursor.close();
             }
             
-            // Delete database entry
+            // Delete all database entries for this folder
             db.delete(TABLE_ALBUM_ART, COLUMN_FOLDER_PATH + " = ?", new String[]{folderPath});
         } catch (Exception e) {
-            Log.e(TAG, "Error deleting cached album art", e);
+            Log.e(TAG, "Error deleting cached album art for folder", e);
+        }
+    }
+    
+    /**
+     * Invalidate cache for a specific song (when the song file has changed).
+     * This removes both the song-level cache entry and triggers album-level refresh.
+     */
+    public void invalidateSongArtCache(String songPath) {
+        if (songPath == null) return;
+        
+        // Delete song-level cache
+        deleteCachedAlbumArtByKey(getSongCacheKey(songPath));
+        
+        // Also invalidate album-level cache for the folder (since embedded art might have changed)
+        File songFile = new File(songPath);
+        File parentDir = songFile.getParentFile();
+        if (parentDir != null) {
+            deleteCachedAlbumArtByKey(getAlbumCacheKey(parentDir.getAbsolutePath()));
         }
     }
 
@@ -514,6 +685,214 @@ public class MusicCacheDatabase extends SQLiteOpenHelper {
 
         Log.d(TAG, "Cleaned up " + deletedCount + " deleted songs from cache");
         return deletedCount;
+    }
+    
+    // ==================== Batch Operations for Performance ====================
+    
+    /**
+     * Batch size for transactions - balances performance with responsiveness.
+     * Smaller batches allow for better progress updates and prevent long-held locks.
+     */
+    private static final int BATCH_SIZE = 100;
+    
+    /**
+     * Result class for batch caching operations.
+     */
+    public static class BatchCacheResult {
+        public int totalProcessed;
+        public int successCount;
+        public int errorCount;
+        public int timeoutCount;
+        public List<String> failedFiles;
+        
+        public BatchCacheResult() {
+            totalProcessed = 0;
+            successCount = 0;
+            errorCount = 0;
+            timeoutCount = 0;
+            failedFiles = new ArrayList<>();
+        }
+    }
+    
+    /**
+     * Progress callback interface for batch caching operations.
+     */
+    public interface BatchProgressCallback {
+        /**
+         * Called periodically during batch caching to report progress.
+         * @param processed Number of files processed so far
+         * @param total Total number of files to process
+         * @param currentFile Name of the current file being processed (may be null)
+         */
+        void onProgress(int processed, int total, String currentFile);
+    }
+
+    /**
+     * Cache multiple songs in a single transaction.
+     * This is MUCH faster than calling cacheSong() for each song individually.
+     * 
+     * @param songs List of songs to cache
+     * @param tagReader Function to read tags for each song (can be null to skip extended tags)
+     * @deprecated Use {@link #cacheSongsBatchWithProgress(List, TagReader, BatchProgressCallback)} for better progress reporting
+     */
+    @Deprecated
+    public void cacheSongsBatch(List<MusicFiles> songs, TagReader tagReader) {
+        cacheSongsBatchWithProgress(songs, tagReader, null);
+    }
+    
+    /**
+     * Cache multiple songs with progress reporting and robust error handling.
+     * 
+     * Key improvements over original:
+     * 1. Uses smaller batched transactions (BATCH_SIZE files each) to prevent long-held locks
+     * 2. Reports progress during caching via callback
+     * 3. Continues processing even if individual files fail
+     * 4. Returns detailed results including error counts
+     * 
+     * @param songs List of songs to cache
+     * @param tagReader Function to read tags for each song (can be null to skip extended tags)
+     * @param progressCallback Optional callback for progress updates (can be null)
+     * @return BatchCacheResult with statistics about the operation
+     */
+    public BatchCacheResult cacheSongsBatchWithProgress(List<MusicFiles> songs, TagReader tagReader, 
+                                                         BatchProgressCallback progressCallback) {
+        BatchCacheResult result = new BatchCacheResult();
+        
+        if (songs == null || songs.isEmpty()) {
+            return result;
+        }
+        
+        int total = songs.size();
+        int processed = 0;
+        
+        SQLiteDatabase db = getWritableDatabase();
+        
+        // Process in batches to allow progress updates and prevent long-held locks
+        for (int batchStart = 0; batchStart < total; batchStart += BATCH_SIZE) {
+            int batchEnd = Math.min(batchStart + BATCH_SIZE, total);
+            
+            db.beginTransaction();
+            try {
+                for (int i = batchStart; i < batchEnd; i++) {
+                    MusicFiles song = songs.get(i);
+                    String path = song.getPath();
+                    
+                    // Report progress
+                    if (progressCallback != null) {
+                        String filename = path != null ? new File(path).getName() : null;
+                        progressCallback.onProgress(processed, total, filename);
+                    }
+                    
+                    try {
+                        ContentValues values = new ContentValues();
+                        values.put(COLUMN_PATH, path);
+                        values.put(COLUMN_TITLE, song.getTitle());
+                        values.put(COLUMN_ARTIST, song.getArtist());
+                        values.put(COLUMN_ALBUM, song.getAlbum());
+                        values.put(COLUMN_DURATION, song.getDuration());
+                        
+                        // Read extended tags if reader provided
+                        if (tagReader != null && path != null) {
+                            try {
+                                String[] extendedTags = tagReader.readExtendedTags(path);
+                                if (extendedTags != null && extendedTags.length >= 2) {
+                                    values.put(COLUMN_ALBUM_ARTIST, extendedTags[0]);
+                                    values.put(COLUMN_YEAR, extendedTags[1]);
+                                }
+                            } catch (Exception e) {
+                                // Tag reading failed - continue with basic info
+                                Log.w(TAG, "Failed to read extended tags for: " + path);
+                                result.errorCount++;
+                                result.failedFiles.add(path);
+                            }
+                        }
+                        
+                        // Get file info for change detection
+                        if (path != null) {
+                            File file = new File(path);
+                            if (file.exists()) {
+                                values.put(COLUMN_FILE_SIZE, file.length());
+                                values.put(COLUMN_LAST_MODIFIED, file.lastModified());
+                            }
+                        }
+                        
+                        db.insertWithOnConflict(TABLE_SONGS, null, values, SQLiteDatabase.CONFLICT_REPLACE);
+                        result.successCount++;
+                        
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error caching song: " + path, e);
+                        result.errorCount++;
+                        if (path != null) {
+                            result.failedFiles.add(path);
+                        }
+                        // Continue with next file - don't abort the whole batch
+                    }
+                    
+                    processed++;
+                    result.totalProcessed = processed;
+                }
+                
+                db.setTransactionSuccessful();
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error in batch transaction", e);
+                // Transaction will be rolled back, but we'll try the next batch
+            } finally {
+                db.endTransaction();
+            }
+        }
+        
+        Log.d(TAG, "Batch cached " + result.successCount + "/" + total + " songs" +
+                   (result.errorCount > 0 ? " (" + result.errorCount + " errors)" : ""));
+        
+        return result;
+    }
+    
+    /**
+     * Interface for reading extended tags during batch operations.
+     */
+    public interface TagReader {
+        /**
+         * Read extended tags for a song file.
+         * @param path Path to the music file
+         * @return String array: [albumArtist, year] or null
+         */
+        String[] readExtendedTags(String path);
+    }
+    
+    /**
+     * Get cached album art file path only (without reading file contents).
+     * This is faster when you only need to check if art exists or get the path.
+     * 
+     * @param folderPath The folder path to look up
+     * @return The path to the cached art file, or null if not cached
+     */
+    public String getCachedAlbumArtPath(String folderPath) {
+        try {
+            SQLiteDatabase db = getReadableDatabase();
+            Cursor cursor = db.query(TABLE_ALBUM_ART,
+                    new String[]{COLUMN_ART_FILE_PATH},
+                    COLUMN_FOLDER_PATH + " = ?",
+                    new String[]{folderPath},
+                    null, null, null);
+
+            String artFilePath = null;
+            if (cursor != null && cursor.moveToFirst()) {
+                artFilePath = cursor.getString(0);
+                cursor.close();
+                
+                // Verify file exists
+                if (artFilePath != null && !new File(artFilePath).exists()) {
+                    artFilePath = null;
+                }
+            } else if (cursor != null) {
+                cursor.close();
+            }
+            return artFilePath;
+        } catch (Exception e) {
+            Log.e(TAG, "Error getting cached album art path", e);
+            return null;
+        }
     }
 
     /**

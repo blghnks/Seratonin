@@ -40,6 +40,8 @@ import static com.fungisoft.seratonin.MainActivity.SONG_NAME_TO_FRAG;
 public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnection {
 
     ImageView nextBtn, prevBtn;
+    // Note: These are static for legacy cross-component access. They are nulled in onDestroyView
+    // to prevent memory leaks. Prefer using the instance methods when possible.
     static ImageView albumArt;
     static TextView artist, songName;
     public static FloatingActionButton playPauseBtn;
@@ -51,9 +53,22 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
     public static final String SONG_NAME = "SONG NAME";
     static ConstraintLayout bottom_bac_frag;
     Boolean bindservice = false;
+    
+    // Singleton-style instance for safe access from other components
+    private static NowPlayingFragmentBottom instance;
+    
+    public static NowPlayingFragmentBottom getInstance() {
+        return instance;
+    }
 
     public NowPlayingFragmentBottom() {
         // Required empty public constructor
+    }
+    
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        instance = this;
     }
 
     @Override
@@ -98,16 +113,13 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
                         SONG_NAME_TO_FRAG = null;
                     }
                     if (SHOW_MINI_PLAYER){
-                        // Use song art loading: embedded first, then external fallback
-                        byte[] art = AlbumArtHelper.getAlbumArtForSong(requireContext(), PATH_TO_FRAG);
-                        if (art != null){
-                            Glide.with(requireContext()).load(art)
-                                    .into(albumArt);
-                        }
-                        else{
-                            Glide.with(requireContext()).load(R.drawable.musicicon)
-                                    .into(albumArt);
-                        }
+                        // Use async art loading to avoid blocking the UI thread
+                        AlbumArtLoader.getInstance().loadAlbumArtForSong(
+                                requireContext(), 
+                                PATH_TO_FRAG, 
+                                albumArt,
+                                R.drawable.musicicon
+                        );
                         songName.setText(SONG_NAME_TO_FRAG);
                         artist.setText(ARTIST_TO_FRAG);
                     }
@@ -141,16 +153,13 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
                         SONG_NAME_TO_FRAG = null;
                     }
                     if (SHOW_MINI_PLAYER){
-                        // Use song art loading: embedded first, then external fallback
-                        byte[] art = AlbumArtHelper.getAlbumArtForSong(requireContext(), PATH_TO_FRAG);
-                        if (art != null){
-                            Glide.with(requireContext()).load(art)
-                                    .into(albumArt);
-                        }
-                        else{
-                            Glide.with(requireContext()).load(R.drawable.musicicon)
-                                    .into(albumArt);
-                        }
+                        // Use async art loading to avoid blocking the UI thread
+                        AlbumArtLoader.getInstance().loadAlbumArtForSong(
+                                requireContext(), 
+                                PATH_TO_FRAG, 
+                                albumArt,
+                                R.drawable.musicicon
+                        );
                         songName.setText(SONG_NAME_TO_FRAG);
                         artist.setText(ARTIST_TO_FRAG);
                     }
@@ -183,12 +192,12 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
     }
 
     public static void setLayoutInvisible() {
-        if (bottom_bac_frag.getVisibility() == View.VISIBLE) {
+        if (bottom_bac_frag != null && bottom_bac_frag.getVisibility() == View.VISIBLE) {
             bottom_bac_frag.setVisibility(View.GONE);
         }
     }
     public static void setLayoutVisible() {
-        if (bottom_bac_frag.getVisibility() == View.GONE) {
+        if (bottom_bac_frag != null && bottom_bac_frag.getVisibility() == View.GONE) {
             bottom_bac_frag.setVisibility(View.VISIBLE);
         }
     }
@@ -199,16 +208,13 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
         super.onResume();
         if (SHOW_MINI_PLAYER){
             if (PATH_TO_FRAG != null){
-                // Use song art loading: embedded first, then external fallback
-                byte[] art = AlbumArtHelper.getAlbumArtForSong(requireContext(), PATH_TO_FRAG);
-                if (art != null){
-                    Glide.with(requireContext()).load(art)
-                            .into(albumArt);
-                }
-                else{
-                    Glide.with(requireContext()).load(R.drawable.musicicon)
-                            .into(albumArt);
-                }
+                // Use async art loading to avoid blocking the UI thread
+                AlbumArtLoader.getInstance().loadAlbumArtForSong(
+                        requireContext(), 
+                        PATH_TO_FRAG, 
+                        albumArt,
+                        R.drawable.musicicon
+                );
                 songName.setText(SONG_NAME_TO_FRAG);
                 artist.setText(ARTIST_TO_FRAG);
                 Intent intent = new Intent(getContext(), MusicService.class);
@@ -226,7 +232,82 @@ public class  NowPlayingFragmentBottom extends Fragment implements ServiceConnec
         if (getContext() != null){
             if(bindservice) {
                 getContext().unbindService(this);
+                bindservice = false;
             }
+        }
+    }
+    
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        // Null out static references to prevent memory leaks
+        albumArt = null;
+        artist = null;
+        songName = null;
+        playPauseBtn = null;
+        bottom_bac_frag = null;
+        view = null;
+    }
+    
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (instance == this) {
+            instance = null;
+        }
+    }
+    
+    // ========== Public API methods for updating UI from other components ==========
+    
+    /**
+     * Updates the play/pause button icon.
+     * @param isPlaying true to show pause icon, false to show play icon
+     */
+    public void updatePlayPauseButton(boolean isPlaying) {
+        if (playPauseBtn != null) {
+            playPauseBtn.setImageResource(isPlaying ? R.drawable.ic_pause : R.drawable.ic_play);
+        }
+    }
+    
+    /**
+     * Updates the mini player with song information.
+     * @param title song title
+     * @param artistName artist name
+     * @param artBytes album art bytes (can be null)
+     */
+    public void updateSongInfo(String title, String artistName, byte[] artBytes) {
+        if (songName != null) {
+            songName.setText(title);
+        }
+        if (artist != null) {
+            artist.setText(artistName);
+        }
+        if (albumArt != null && getContext() != null) {
+            if (artBytes != null) {
+                Glide.with(getContext())
+                        .load(artBytes)
+                        .into(albumArt);
+            } else {
+                albumArt.setImageResource(R.drawable.musicicon);
+            }
+        }
+    }
+    
+    /**
+     * Shows the mini player layout.
+     */
+    public void showMiniPlayer() {
+        if (bottom_bac_frag != null && bottom_bac_frag.getVisibility() == View.GONE) {
+            bottom_bac_frag.setVisibility(View.VISIBLE);
+        }
+    }
+    
+    /**
+     * Hides the mini player layout.
+     */
+    public void hideMiniPlayer() {
+        if (bottom_bac_frag != null && bottom_bac_frag.getVisibility() == View.VISIBLE) {
+            bottom_bac_frag.setVisibility(View.GONE);
         }
     }
 

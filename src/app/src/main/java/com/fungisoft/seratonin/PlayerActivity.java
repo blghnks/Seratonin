@@ -76,6 +76,10 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     // Queue database
     private QueueDatabase queueDatabase;
     
+    // Seek bar update runnable - stored as field to allow proper cleanup
+    private Runnable seekBarUpdateRunnable;
+    private boolean isActivityRunning = false;
+    
     // Queue bottom sheet
     private BottomSheetBehavior<View> queueBottomSheetBehavior;
     private RecyclerView queueRecyclerView;
@@ -136,17 +140,22 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
 
             }
         });
-        PlayerActivity.this.runOnUiThread(new Runnable() {
+        
+        // Initialize seek bar update runnable with lifecycle check
+        seekBarUpdateRunnable = new Runnable() {
             @Override
             public void run() {
-                if (musicService != null){
+                if (!isActivityRunning) return;
+                if (musicService != null) {
                     int mCurrentPosition = musicService.getCurrentPosition() / 1000;
                     seekBar.setProgress(mCurrentPosition);
                     duration_played.setText(formattedTime(mCurrentPosition));
                 }
                 handler.postDelayed(this, 1000);
             }
-        });
+        };
+        handler.post(seekBarUpdateRunnable);
+        
         shuffleBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -190,277 +199,151 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
 
     @Override
     protected void onResume() {
+        super.onResume();
+        isActivityRunning = true;
         Intent intent = new Intent(this, MusicService.class);
         bindService(intent, this, BIND_AUTO_CREATE);
-        playThreadBtn();
-        nextThreadBtn();
-        prevThreadBtn();
-        super.onResume();
+        
+        // Setup click listeners directly - no need for background threads
+        setupPlaybackClickListeners();
+        
+        // Restart seek bar updates
+        if (seekBarUpdateRunnable != null) {
+            handler.removeCallbacks(seekBarUpdateRunnable);
+            handler.post(seekBarUpdateRunnable);
+        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        isActivityRunning = false;
+        // Stop seek bar updates to prevent handler leaks
+        if (seekBarUpdateRunnable != null) {
+            handler.removeCallbacks(seekBarUpdateRunnable);
+        }
         unbindService(this);
     }
-
-    private void prevThreadBtn() {
-        Thread prevThread = new Thread() {
-            @Override
-            public void run() {
-                super.run();
-                prevBtn.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        prevBtnClicked();
-
-                    }
-                });
-            }
-        };
-        prevThread.start();
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        isActivityRunning = false;
+        // Clean up all handler callbacks to prevent leaks
+        handler.removeCallbacksAndMessages(null);
+    }
+    
+    /**
+     * Setup click listeners for playback control buttons.
+     * Called from onResume - no need for background threads.
+     */
+    private void setupPlaybackClickListeners() {
+        prevBtn.setOnClickListener(v -> prevBtnClicked());
+        nextBtn.setOnClickListener(v -> nextBtnClicked());
+        playPauseBtn.setOnClickListener(v -> playPauseBtnClicked());
     }
 
     public void prevBtnClicked() {
-        if (musicService.isPlaying()){
-            musicService.stop();
-            musicService.release();
-            // When shuffle is on, the queue is already shuffled, so just go to previous position
-            // When repeat is on without shuffle, stay at same position
-            if (repeatBoolean && !shuffleBoolean) {
-                // Repeat current song
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else if (repeatBoolean && shuffleBoolean) {
-                // Both repeat and shuffle - move to previous in shuffled queue
-                position = ((position - 1) < 0 ? (listSongs.size() - 1) : (position - 1));
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else {
-                // Normal progression (works for both shuffle on and off since queue is already shuffled)
-                position = ((position - 1) < 0 ? (listSongs.size() - 1) : (position - 1));
-                if (shuffleBoolean) {
-                    shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                }
-            }
-            uri = Uri.parse(listSongs.get(position).getPath());
-            musicService.createMediaPlayer(position);
-            metaData(uri);
-            song_name.setText(listSongs.get(position).getTitle());
-            artist_name.setText(listSongs.get(position).getArtist());
-            album_name.setText(listSongs.get(position).getAlbum());
-            seekBar.setMax(musicService.getDuration() / 1000);
-            PlayerActivity.this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (musicService != null){
-                        int mCurrentPosition = musicService.getCurrentPosition() / 1000;
-                        seekBar.setProgress(mCurrentPosition);
-                    }
-                    handler.postDelayed(this, 1000);
-                }
-            });
-            musicService.OnCompleted();
-            musicService.showNotification(R.drawable.ic_pause);
-            playPauseBtn.setBackgroundResource(R.drawable.ic_pause);
-            musicService.start();
-            passMusicService = musicService;
-
-            byte[] art = artist_image;
-            if (art != null){
-                Glide.with(getBaseContext()).load(art)
-                        .into(NowPlayingFragmentBottom.albumArt);
-            }else{
-//                Toast.makeText(musicService, "Its null", Toast.LENGTH_SHORT).show();
-            }
-            NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-            NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
-        }
-        else {
-            musicService.stop();
-            musicService.release();
-            // When shuffle is on, the queue is already shuffled, so just go to previous position
-            // When repeat is on without shuffle, stay at same position
-            if (repeatBoolean && !shuffleBoolean) {
-                // Repeat current song
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else if (repeatBoolean && shuffleBoolean) {
-                // Both repeat and shuffle - move to previous in shuffled queue
-                position = ((position - 1) < 0 ? (listSongs.size() - 1) : (position - 1));
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else {
-                // Normal progression (works for both shuffle on and off since queue is already shuffled)
-                position = ((position - 1) < 0 ? (listSongs.size() - 1) : (position - 1));
-                if (shuffleBoolean) {
-                    shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                }
-            }
-            uri = Uri.parse(listSongs.get(position).getPath());
-            musicService.createMediaPlayer(position);
-            metaData(uri);
-            song_name.setText(listSongs.get(position).getTitle());
-            artist_name.setText(listSongs.get(position).getArtist());
-            album_name.setText(listSongs.get(position).getAlbum());
-            seekBar.setMax(musicService.getDuration() / 1000);
-            PlayerActivity.this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (musicService != null){
-                        int mCurrentPosition = musicService.getCurrentPosition() / 1000;
-                        seekBar.setProgress(mCurrentPosition);
-                    }
-                    handler.postDelayed(this, 1000);
-                }
-            });
-            musicService.OnCompleted();
-            musicService.showNotification(R.drawable.ic_play);
-            playPauseBtn.setBackgroundResource(R.drawable.ic_play);
-            passMusicService = musicService;
-
-            byte[] art = artist_image;
-            if (art != null){
-                Glide.with(getBaseContext()).load(art)
-                        .into(NowPlayingFragmentBottom.albumArt);
-            }else{
-//                Toast.makeText(musicService, "Its null", Toast.LENGTH_SHORT).show();
-            }
-            NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-            NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
-        }
+        boolean wasPlaying = musicService.isPlaying();
         
-        // Update queue UI to show correct next song
-        updateQueueUI();
-    }
-
-    private void nextThreadBtn() {
-        Thread nextThread = new Thread() {
-            @Override
-            public void run() {
-                super.run();
-                nextBtn.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        nextBtnClicked();
-
-                    }
-                });
-            }
-        };
-        nextThread.start();
+        // Calculate new position for previous track
+        if (!(repeatBoolean && !shuffleBoolean)) {
+            // Not repeat-only mode, so move to previous position
+            position = ((position - 1) < 0 ? (listSongs.size() - 1) : (position - 1));
+        }
+        // If repeat-only (no shuffle), position stays the same (repeat current song)
+        
+        changeTrack(wasPlaying);
     }
 
     public void nextBtnClicked() {
-        if (musicService.isPlaying()){
-            musicService.stop();
-            musicService.release();
-            // When shuffle is on, the queue is already shuffled, so just go to next position
-            // When repeat is on without shuffle, stay at same position
-            if (repeatBoolean && !shuffleBoolean) {
-                // Repeat current song
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else if (repeatBoolean && shuffleBoolean) {
-                // Both repeat and shuffle - move to next in shuffled queue
-                position = ((position + 1) % listSongs.size());
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else {
-                // Normal progression (works for both shuffle on and off since queue is already shuffled)
-                position = ((position + 1) % listSongs.size());
-                if (shuffleBoolean) {
-                    shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                }
-            }
-            //else position will be position
-            uri = Uri.parse(listSongs.get(position).getPath());
-            musicService.createMediaPlayer(position);
-            metaData(uri);
-            song_name.setText(listSongs.get(position).getTitle());
-            artist_name.setText(listSongs.get(position).getArtist());
-            album_name.setText(listSongs.get(position).getAlbum());
-            seekBar.setMax(musicService.getDuration() / 1000);
-            PlayerActivity.this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (musicService != null){
-                        int mCurrentPosition = musicService.getCurrentPosition() / 1000;
-                        seekBar.setProgress(mCurrentPosition);
-                    }
-                    handler.postDelayed(this, 1000);
-                }
-            });
-            musicService.OnCompleted();
-            musicService.showNotification(R.drawable.ic_pause);
-            playPauseBtn.setBackgroundResource(R.drawable.ic_pause);
+        boolean wasPlaying = musicService.isPlaying();
+        
+        // Calculate new position for next track
+        if (!(repeatBoolean && !shuffleBoolean)) {
+            // Not repeat-only mode, so move to next position
+            position = ((position + 1) % listSongs.size());
+        }
+        // If repeat-only (no shuffle), position stays the same (repeat current song)
+        
+        changeTrack(wasPlaying);
+    }
+    
+    /**
+     * Core method for changing tracks. Handles all the common logic for
+     * prev/next button clicks to avoid massive code duplication.
+     * 
+     * @param startPlaying true if playback should start, false to just prepare the track
+     */
+    private void changeTrack(boolean startPlaying) {
+        // Stop and release current playback
+        musicService.stop();
+        musicService.release();
+        
+        // Update shuffle/repeat button states
+        updateShuffleButton();
+        updateRepeatButton();
+        
+        // Setup new track
+        uri = Uri.parse(listSongs.get(position).getPath());
+        musicService.createMediaPlayer(position);
+        metaData(uri);
+        
+        // Update player UI
+        song_name.setText(listSongs.get(position).getTitle());
+        artist_name.setText(listSongs.get(position).getArtist());
+        album_name.setText(listSongs.get(position).getAlbum());
+        seekBar.setMax(musicService.getDuration() / 1000);
+        
+        musicService.OnCompleted();
+        
+        if (startPlaying) {
             musicService.start();
-            passMusicService = musicService;
-
-            byte[] art = artist_image;
-            if (art != null){
-                Glide.with(getBaseContext()).load(art)
-                        .into(NowPlayingFragmentBottom.albumArt);
-            }else{
-//                Toast.makeText(musicService, "Its null", Toast.LENGTH_SHORT).show();
-            }
-            NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-            NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
-        }
-        else {
-            musicService.stop();
-            musicService.release();
-            // When shuffle is on, the queue is already shuffled, so just go to next position
-            // When repeat is on without shuffle, stay at same position
-            if (repeatBoolean && !shuffleBoolean) {
-                // Repeat current song
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else if (repeatBoolean && shuffleBoolean) {
-                // Both repeat and shuffle - move to next in shuffled queue
-                position = ((position + 1) % listSongs.size());
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            } else {
-                // Normal progression (works for both shuffle on and off since queue is already shuffled)
-                position = ((position + 1) % listSongs.size());
-                if (shuffleBoolean) {
-                    shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                }
-            }
-            //else position will be position
-//            position = ((position + 1) % listSongs.size());
-            uri = Uri.parse(listSongs.get(position).getPath());
-            musicService.createMediaPlayer(position);
-            metaData(uri);
-            song_name.setText(listSongs.get(position).getTitle());
-            artist_name.setText(listSongs.get(position).getArtist());
-            album_name.setText(listSongs.get(position).getAlbum());
-            seekBar.setMax(musicService.getDuration() / 1000);
-            PlayerActivity.this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (musicService != null){
-                        int mCurrentPosition = musicService.getCurrentPosition() / 1000;
-                        seekBar.setProgress(mCurrentPosition);
-                    }
-                    handler.postDelayed(this, 1000);
-                }
-            });
-            musicService.OnCompleted();
+            playPauseBtn.setImageResource(R.drawable.ic_pause);
+            musicService.showNotification(R.drawable.ic_pause);
+        } else {
+            playPauseBtn.setImageResource(R.drawable.ic_play);
             musicService.showNotification(R.drawable.ic_play);
-            playPauseBtn.setBackgroundResource(R.drawable.ic_play);
-            passMusicService = musicService;
-
-            byte[] art = artist_image;
-            if (art != null){
-                Glide.with(getBaseContext()).load(art)
-                        .into(NowPlayingFragmentBottom.albumArt);
-            }else{
-//                Toast.makeText(musicService, "Art is NULL!!!", Toast.LENGTH_SHORT).show();
-            }
-            NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-            NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
         }
+        
+        passMusicService = musicService;
+        
+        // Update now playing fragment
+        updateNowPlayingFragment();
         
         // Update queue UI to show correct next song
         updateQueueUI();
+    }
+    
+    /**
+     * Update the NowPlayingFragmentBottom with current song info.
+     */
+    private void updateNowPlayingFragment() {
+        if (listSongs == null || position < 0 || position >= listSongs.size()) {
+            return;
+        }
+        
+        MusicFiles currentSong = listSongs.get(position);
+        
+        byte[] art = artist_image;
+        if (art != null && NowPlayingFragmentBottom.albumArt != null) {
+            if (isValidContextForGlide(getBaseContext())) {
+                Glide.with(getBaseContext()).load(art)
+                        .into(NowPlayingFragmentBottom.albumArt);
+            }
+        }
+        
+        if (NowPlayingFragmentBottom.songName != null) {
+            NowPlayingFragmentBottom.songName.setText(currentSong.getTitle());
+        }
+        if (NowPlayingFragmentBottom.artist != null) {
+            NowPlayingFragmentBottom.artist.setText(currentSong.getArtist());
+        }
+        if (NowPlayingFragmentBottom.playPauseBtn != null) {
+            NowPlayingFragmentBottom.playPauseBtn.setImageResource(
+                    musicService != null && musicService.isPlaying() 
+                            ? R.drawable.ic_pause : R.drawable.ic_play);
+        }
     }
 
     private int getRandom(int i) {
@@ -468,74 +351,27 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         return random.nextInt(i + 1);
     }
 
-    private void playThreadBtn() {
-        Thread playThread = new Thread() {
-            @Override
-            public void run() {
-                super.run();
-                playPauseBtn.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        playPauseBtnClicked();
-
-                    }
-                });
-            }
-        };
-        playThread.start();
-    }
-
     public void playPauseBtnClicked() {
         if (musicService.isPlaying()){
             playPauseBtn.setImageResource(R.drawable.ic_play);
             musicService.showNotification(R.drawable.ic_play);
-            NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
+            if (NowPlayingFragmentBottom.playPauseBtn != null) {
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
+            }
             musicService.pause();
-            if (shuffleBoolean && !repeatBoolean){
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-            }else if (!shuffleBoolean && repeatBoolean){
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            }else if (shuffleBoolean){
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            }
-            seekBar.setMax(musicService.getDuration() / 1000);
-            PlayerActivity.this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (musicService != null){
-                        int mCurrentPosition = musicService.getCurrentPosition() / 1000;
-                        seekBar.setProgress(mCurrentPosition);
-                    }
-                    handler.postDelayed(this, 1000);
-                }
-            });
-        }
-        else{
-            musicService.showNotification(R.drawable.ic_pause);
-            playPauseBtn.setImageResource(R.drawable.ic_pause);
-            NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+        } else {
             musicService.start();
-            if (shuffleBoolean && !repeatBoolean){
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-            }else if (!shuffleBoolean && repeatBoolean){
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
-            }else if (shuffleBoolean){
-                shuffleBtn.setImageResource(R.drawable.ic_shuffle_on);
-                repeatBtn.setImageResource(R.drawable.ic_repeat_on);
+            playPauseBtn.setImageResource(R.drawable.ic_pause);
+            musicService.showNotification(R.drawable.ic_pause);
+            if (NowPlayingFragmentBottom.playPauseBtn != null) {
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
             }
-            seekBar.setMax(musicService.getDuration() / 1000);
-            PlayerActivity.this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (musicService != null){
-                        int mCurrentPosition = musicService.getCurrentPosition() / 1000;
-                        seekBar.setProgress(mCurrentPosition);
-                    }
-                    handler.postDelayed(this, 1000);
-                }
-            });
         }
+        
+        // Update shuffle/repeat button states
+        updateShuffleButton();
+        updateRepeatButton();
+        
         passMusicService = musicService;
     }
 
@@ -553,19 +389,13 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
 //        NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
 //    }
 
+    /**
+     * Format seconds into mm:ss format.
+     * @deprecated Use {@link TimeFormatter#formatTime(int)} instead.
+     */
+    @Deprecated
     private String formattedTime(int mCurrentPosition) {
-        String totalout = "";
-        String totalNew = "";
-        String seconds = String.valueOf(mCurrentPosition % 60);
-        String minutes = String.valueOf(mCurrentPosition / 60);
-        totalout = minutes + ":" + seconds;
-        totalNew = minutes + ":" + "0" + seconds;
-        if (seconds.length() == 1){
-            return totalNew;
-        }
-        else{
-            return totalout;
-        }
+        return TimeFormatter.formatTime(mCurrentPosition);
     }
 
     private void getIntenMethod() {
@@ -1120,13 +950,54 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         double darkness = 1-(0.299*Color.red(color) + 0.587*Color.green(color) + 0.114*Color.blue(color))/255;
         return !(darkness < 0.5);
     }
+    
+    /**
+     * Load album art and apply palette colors asynchronously to avoid main thread blocking.
+     * This is a key fix for UI stutter during song changes.
+     */
     private void metaData(Uri uri){
-        // Get duration from stored metadata
+        // Get duration from stored metadata (fast, OK on main thread)
         int durationTotal = Integer.parseInt(listSongs.get(position).getDuration()) / 1000;
         duration_total.setText(formattedTime(durationTotal));
         
-        // Use song art loading: embedded first, then external fallback
-        byte[] art = AlbumArtHelper.getAlbumArtForSong(this, uri.toString());
+        // Load art asynchronously to avoid blocking the UI thread
+        final String uriString = uri.toString();
+        final Context context = this;
+        
+        // Try cache first for instant response
+        byte[] cachedArt = AlbumArtLoader.getInstance().getFromCacheOnly(uriString);
+        if (cachedArt != null) {
+            applyArtAndPalette(cachedArt);
+            return;
+        }
+        
+        // Show placeholder immediately while loading
+        if (isValidContextForGlide(PlayerActivity.this)) {
+            Glide.with(PlayerActivity.this)
+                    .asBitmap()
+                    .load(R.drawable.musicicon)
+                    .into(cover_art);
+        }
+        setDefaultColors();
+        
+        // Load art in background thread
+        new Thread(() -> {
+            byte[] art = AlbumArtHelper.getAlbumArtForSong(context, uriString);
+            
+            // Post result to main thread
+            handler.post(() -> {
+                if (!isFinishing() && !isDestroyed()) {
+                    applyArtAndPalette(art);
+                }
+            });
+        }).start();
+    }
+    
+    /**
+     * Apply album art to cover and extract palette colors.
+     * Must be called on main thread.
+     */
+    private void applyArtAndPalette(byte[] art) {
         artist_image = art;
         Bitmap bitmap = null;
         if (art != null) {

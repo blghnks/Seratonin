@@ -26,6 +26,8 @@ import java.util.ArrayList;
 public class AlbumDetailsAdapter extends RecyclerView.Adapter<AlbumDetailsAdapter.MyHolder> {
 
     private final Context mContext;
+    // Note: Static for legacy cross-component access from PlayerActivity.
+    // A proper fix would involve a shared MusicRepository singleton.
     static ArrayList<MusicFiles> albumFiles;
     View view;
     static byte[] passAlbumImage;
@@ -50,20 +52,23 @@ public class AlbumDetailsAdapter extends RecyclerView.Adapter<AlbumDetailsAdapte
         holder.artist_name.setText(albumFiles.get(position).getArtist());
         int duration = Integer.parseInt(albumFiles.get(position).getDuration()) / 1000;
         holder.alb_duration.setText(formattedTime(duration));
-        // Use song art loading: embedded first, then external fallback
-        byte[] image = AlbumArtHelper.getAlbumArtForSong(mContext, albumFiles.get(position).getPath());
-        checkAlbumPass = true;
-        passAlbumImage = image;
-        if (image != null){
-            Glide.with(mContext).asBitmap()
-                    .load(image)
-                    .into(holder.album_image);
+        
+        // Use async art loading to avoid blocking the UI thread during scrolling
+        // This is the key fix for RecyclerView jank/stutter
+        AlbumArtLoader.getInstance().loadAlbumArtForSong(
+                mContext, 
+                albumFiles.get(position).getPath(), 
+                holder.album_image,
+                R.drawable.musicicon
+        );
+        
+        // For backward compatibility - get from cache if available (non-blocking)
+        byte[] cachedArt = AlbumArtLoader.getInstance().getFromCacheOnly(albumFiles.get(position).getPath());
+        if (cachedArt != null) {
+            checkAlbumPass = true;
+            passAlbumImage = cachedArt;
         }
-        else {
-            Glide.with(mContext)
-                    .load(R.drawable.musicicon)
-                    .into(holder.album_image);
-        }
+        
         holder.itemView.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION) return;

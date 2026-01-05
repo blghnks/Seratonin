@@ -203,23 +203,28 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                 MusicCacheDatabase cache = MusicCacheDatabase.getInstance(this);
                 cache.clearAllCaches();
                 AlbumArtHelper.clearCache(this);
+                AlbumArtLoader.getInstance().clearCache();
                 
                 updateProgress(10, 100, "Loading music files...");
                 
                 // Load music files
                 ArrayList<MusicFiles> newMusicFiles = getAllAudioFromFolder(this, musicFolderPath);
                 
-                updateProgress(20, 100, "Caching metadata...");
+                final int totalSongs = newMusicFiles.size();
                 
-                // Cache song metadata with progress
-                int total = newMusicFiles.size();
-                for (int i = 0; i < total; i++) {
-                    MusicFiles song = newMusicFiles.get(i);
-                    cacheSongMetadata(cache, song);
-                    
-                    int progress = 20 + ((i * 40) / Math.max(total, 1));
-                    updateProgress(progress, 100, "Caching: " + song.getTitle());
-                }
+                // Progress range: 20-60% for metadata caching (40% of progress bar)
+                // Use new batch caching with progress callback to prevent hangs
+                cache.cacheSongsBatchWithProgress(newMusicFiles, path -> {
+                    TagEditorHelper.AudioTags tags = TagEditorHelper.readTags(path);
+                    return new String[] { tags.albumArtist, tags.year };
+                }, (processed, total, currentFile) -> {
+                    // Calculate progress within the 20-60% range
+                    int progressPercent = 20 + ((processed * 40) / Math.max(total, 1));
+                    String message = currentFile != null 
+                        ? "Caching: " + currentFile 
+                        : "Caching metadata... (" + processed + "/" + total + ")";
+                    updateProgress(progressPercent, 100, message);
+                });
                 
                 updateProgress(60, 100, "Caching album art...");
                 
@@ -510,6 +515,12 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     
     /**
      * Rescan folders - clears cache and reloads music with progress.
+     * 
+     * This method has been improved to:
+     * 1. Use timeout-protected metadata reading to prevent hangs on corrupt files
+     * 2. Show granular progress during metadata caching
+     * 3. Continue processing even if individual files fail
+     * 4. Use batched transactions to prevent database lock issues
      */
     public void rescanFolders() {
         showProgressDialog("Rescanning Library");
@@ -526,6 +537,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                 MusicCacheDatabase cache = MusicCacheDatabase.getInstance(this);
                 cache.clearAllCaches();
                 AlbumArtHelper.clearCache(this);
+                AlbumArtLoader.getInstance().clearCache();
                 
                 updateProgress(10, 100, "Loading music files...");
                 
@@ -535,22 +547,36 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                     // Reload music files
                     ArrayList<MusicFiles> newMusicFiles = getAllAudioFromFolder(this, musicFolderPath);
                     
-                    updateProgress(30, 100, "Caching metadata...");
+                    final int totalSongs = newMusicFiles.size();
                     
-                    // Cache song metadata
-                    int total = newMusicFiles.size();
-                    for (int i = 0; i < total; i++) {
-                        MusicFiles song = newMusicFiles.get(i);
-                        cacheSongMetadata(cache, song);
-                        
-                        int progress = 30 + ((i * 40) / Math.max(total, 1));
-                        updateProgress(progress, 100, "Caching: " + song.getTitle());
+                    // Progress range: 20-70% for metadata caching (50% of progress bar)
+                    // Use new batch caching with progress callback to prevent hangs
+                    MusicCacheDatabase.BatchCacheResult cacheResult = cache.cacheSongsBatchWithProgress(
+                        newMusicFiles, 
+                        path -> {
+                            // This is now timeout-protected via TagEditorHelper.readTags()
+                            TagEditorHelper.AudioTags tags = TagEditorHelper.readTags(path);
+                            return new String[] { tags.albumArtist, tags.year };
+                        }, 
+                        (processed, total, currentFile) -> {
+                            // Calculate progress within the 20-70% range
+                            int progressPercent = 20 + ((processed * 50) / Math.max(total, 1));
+                            String message = currentFile != null 
+                                ? "Caching: " + currentFile 
+                                : "Caching metadata... (" + processed + "/" + total + ")";
+                            updateProgress(progressPercent, 100, message);
+                        }
+                    );
+                    
+                    // Log any issues for debugging
+                    if (cacheResult.errorCount > 0) {
+                        Log.w(TAG, "Rescan completed with " + cacheResult.errorCount + " errors");
                     }
                     
                     updateProgress(70, 100, "Caching album art...");
                     
                     // Cache album art with progress
-                    cacheAlbumArtWithProgress(newMusicFiles, 70, 100);
+                    cacheAlbumArtWithProgress(newMusicFiles, 70, 95);
                     
                     // Update static reference
                     musicFiles = newMusicFiles;

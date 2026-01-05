@@ -64,14 +64,17 @@ public class AlbumDetails extends AppCompatActivity {
                 j++;
             }
         }
-        // Use album art loading: external first, then embedded fallback (album-level display)
-        byte[] image = AlbumArtHelper.getAlbumArtForAlbum(this, albumSongs.get(0).getPath());
-        if (image != null){
-            Glide.with(this)
-                    .load(image)
-                    .into(albumPhoto);
-        }
-        else {
+        
+        // Use async art loading to avoid blocking the UI thread
+        // This prevents stuttering when opening album details
+        if (!albumSongs.isEmpty()) {
+            AlbumArtLoader.getInstance().loadAlbumArtForGrid(
+                    this, 
+                    albumSongs.get(0).getPath(), 
+                    albumPhoto,
+                    R.drawable.musicicon
+            );
+        } else {
             Glide.with(this)
                     .load(R.drawable.musicicon)
                     .into(albumPhoto);

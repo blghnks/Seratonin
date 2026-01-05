@@ -360,7 +360,8 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
     }
 
     /**
-     * Updates MediaSession metadata with current song info
+     * Updates MediaSession metadata with current song info.
+     * Uses cached album art for fast response, loads asynchronously if not cached.
      */
     private void updateMediaSessionMetadata() {
         if (musicFiles == null || position < 0 || position >= musicFiles.size()) {
@@ -381,8 +382,8 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
             Log.e(TAG, "Error parsing duration", e);
         }
         
-        // Add album art - use song art loading: embedded first, then external fallback
-        byte[] albumArt = AlbumArtHelper.getAlbumArtForSong(this, currentSong.getPath());
+        // Try to get cached album art first (fast, non-blocking)
+        byte[] albumArt = AlbumArtLoader.getInstance().getFromCacheOnly(currentSong.getPath());
         if (albumArt != null) {
             Bitmap bitmap = BitmapFactory.decodeByteArray(albumArt, 0, albumArt.length);
             if (bitmap != null) {
@@ -390,7 +391,38 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
             }
         }
         
+        // Set metadata immediately with cached art (or no art)
         mediaSessionCompat.setMetadata(builder.build());
+        
+        // If no cached art, load in background and update
+        if (albumArt == null) {
+            final String path = currentSong.getPath();
+            final int currentPosition = position;
+            new Thread(() -> {
+                byte[] art = AlbumArtHelper.getAlbumArtForSong(this, path);
+                if (art != null && position == currentPosition) {
+                    Bitmap bitmap = BitmapFactory.decodeByteArray(art, 0, art.length);
+                    if (bitmap != null) {
+                        MediaMetadataCompat.Builder asyncBuilder = new MediaMetadataCompat.Builder()
+                                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentSong.getTitle())
+                                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, currentSong.getArtist())
+                                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, currentSong.getAlbum())
+                                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap);
+                        try {
+                            long duration = Long.parseLong(currentSong.getDuration());
+                            asyncBuilder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration);
+                        } catch (NumberFormatException e) {
+                            // Ignore
+                        }
+                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                            if (position == currentPosition) {
+                                mediaSessionCompat.setMetadata(asyncBuilder.build());
+                            }
+                        });
+                    }
+                }
+            }).start();
+        }
     }
 
     /**
@@ -449,8 +481,8 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
                 .setAction(ACTION_STOP);
         PendingIntent stopPending = PendingIntent.getBroadcast(this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        // Use song art loading: embedded first, then external fallback
-        byte[] picture = AlbumArtHelper.getAlbumArtForSong(this, musicFiles.get(position).getPath());
+        // Try cached art first for fast notification display (non-blocking)
+        byte[] picture = AlbumArtLoader.getInstance().getFromCacheOnly(musicFiles.get(position).getPath());
         Bitmap thumb = null;
         if (picture != null) {
             thumb = BitmapFactory.decodeByteArray(picture, 0, picture.length);

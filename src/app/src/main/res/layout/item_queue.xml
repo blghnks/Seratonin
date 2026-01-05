@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="64dp"
+    android:background="?attr/selectableItemBackground"
+    android:paddingHorizontal="@dimen/spacing_md">
+
+    <!-- Drag handle -->
+    <ImageView
+        android:id="@+id/drag_handle"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@drawable/ic_drag_handle"
+        android:contentDescription="Drag to reorder"
+        app:tint="@color/text_secondary_dark"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- Queue position indicator -->
+    <TextView
+        android:id="@+id/queue_position"
+        android:layout_width="24dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_sm"
+        android:gravity="center"
+        android:textColor="@color/text_secondary_dark"
+        android:textSize="@dimen/text_caption"
+        tools:text="1"
+        app:layout_constraintStart_toEndOf="@id/drag_handle"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- Song info container -->
+    <LinearLayout
+        android:id="@+id/song_info_container"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:orientation="vertical"
+        app:layout_constraintStart_toEndOf="@id/queue_position"
+        app:layout_constraintEnd_toStartOf="@id/now_playing_indicator"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <TextView
+            android:id="@+id/queue_song_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary_dark"
+            android:textSize="@dimen/text_body"
+            tools:text="Song Title" />
+
+        <TextView
+            android:id="@+id/queue_song_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_secondary_dark"
+            android:textSize="@dimen/text_caption"
+            tools:text="Artist Name" />
+
+    </LinearLayout>
+
+    <!-- Now playing indicator -->
+    <ImageView
+        android:id="@+id/now_playing_indicator"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:src="@drawable/ic_equalizer"
+        android:visibility="gone"
+        app:tint="@color/accent_purple"
+        app:layout_constraintEnd_toStartOf="@id/remove_from_queue"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        tools:visibility="visible" />
+
+    <!-- Remove button -->
+    <ImageView
+        android:id="@+id/remove_from_queue"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="4dp"
+        android:src="@drawable/ic_close"
+        android:contentDescription="Remove from queue"
+        app:tint="@color/text_secondary_dark"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

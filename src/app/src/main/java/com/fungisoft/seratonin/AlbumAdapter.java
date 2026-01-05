@@ -40,17 +40,16 @@ public class AlbumAdapter extends RecyclerView.Adapter<AlbumAdapter.MyHolder> {
     public void onBindViewHolder(@NonNull @NotNull MyHolder holder, int position) {
         holder.album_name.setText(albumFiles.get(position).getAlbum());
         holder.artist_name.setText(albumFiles.get(position).getArtist());
-        // Use grid-optimized art loading: external first, skip embedded if external exists
-        AlbumArtHelper.AlbumArtResult artResult = AlbumArtHelper.getAlbumArtForGrid(mContext, albumFiles.get(position).getPath());
-        if (artResult.artData != null) {
-            Glide.with(mContext).asBitmap()
-                    .load(artResult.artData)
-                    .into(holder.album_image);
-        } else {
-            Glide.with(mContext)
-                    .load(R.drawable.musicicon)
-                    .into(holder.album_image);
-        }
+        
+        // Use async art loading to avoid blocking the UI thread during scrolling
+        // This is the key fix for RecyclerView jank/stutter
+        AlbumArtLoader.getInstance().loadAlbumArtForGrid(
+                mContext, 
+                albumFiles.get(position).getPath(), 
+                holder.album_image,
+                R.drawable.musicicon
+        );
+        
         holder.itemView.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition != RecyclerView.NO_POSITION) {
