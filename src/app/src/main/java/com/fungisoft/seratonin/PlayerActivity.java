@@ -278,7 +278,12 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     private void setupPlaybackClickListeners() {
         prevBtn.setOnClickListener(v -> prevBtnClicked());
         nextBtn.setOnClickListener(v -> nextBtnClicked());
-        playPauseBtn.setOnClickListener(v -> playPauseBtnClicked());
+        // Play/pause button toggles via service, which then calls back to sync UI
+        playPauseBtn.setOnClickListener(v -> {
+            if (musicService != null) {
+                musicService.playPauseBtnClicked();
+            }
+        });
     }
 
     public void prevBtnClicked() {
@@ -362,17 +367,13 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     }
 
     public void playPauseBtnClicked() {
-        if (musicService.isPlaying()){
-            playPauseBtn.setImageResource(R.drawable.ic_play);
-            musicService.showNotification(R.drawable.ic_play);
-            updateMiniPlayerIcon(R.drawable.ic_play);
-            musicService.pause();
-        } else {
-            musicService.start();
-            playPauseBtn.setImageResource(R.drawable.ic_pause);
-            musicService.showNotification(R.drawable.ic_pause);
-            updateMiniPlayerIcon(R.drawable.ic_pause);
-        }
+        // Sync UI to current service state (service is source of truth)
+        if (musicService == null) return;
+        
+        boolean isPlaying = musicService.isPlaying();
+        int icon = isPlaying ? R.drawable.ic_pause : R.drawable.ic_play;
+        playPauseBtn.setImageResource(icon);
+        updateMiniPlayerIcon(icon);
         
         // Update shuffle/repeat button states
         updateShuffleButton();

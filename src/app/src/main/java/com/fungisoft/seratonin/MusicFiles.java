@@ -7,6 +7,9 @@ public class MusicFiles {
     private final String album;
     private final String duration;
     private String id;
+    private String year;
+    private long size;
+    private String albumArtist;
 
     public MusicFiles(String path, String title, String artist, String album, String duration, String id) {
         this.path = path;
@@ -15,6 +18,8 @@ public class MusicFiles {
         this.album = album;
         this.duration = duration;
         this.id = id;
+        this.year = "";
+        this.size = 0;
     }
 
     public String getPath() {
@@ -37,6 +42,14 @@ public class MusicFiles {
         this.artist = artist;
     }
 
+    public String getAlbumArtist() {
+        return albumArtist;
+    }
+
+    public void setAlbumArtist(String albumArtist) {
+        this.albumArtist = albumArtist;
+    }
+
     public String getAlbum() {
         return album;
     }
@@ -52,5 +65,21 @@ public class MusicFiles {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public String getYear() {
+        return year;
+    }
+
+    public void setYear(String year) {
+        this.year = year != null ? year : "";
+    }
+
+    public long getSize() {
+        return size;
+    }
+
+    public void setSize(long size) {
+        this.size = size;
     }
 }

@@ -38,7 +38,18 @@ public class AlbumAdapter extends RecyclerView.Adapter<AlbumAdapter.MyHolder> {
     @Override
     public void onBindViewHolder(@NonNull @NotNull MyHolder holder, int position) {
         holder.album_name.setText(albumFiles.get(position).getAlbum());
-        holder.artist_name.setText(albumFiles.get(position).getArtist());
+        // Use Album Artist tag, with fallback to track artist, then "Unknown Artist"
+        String albumArtist = albumFiles.get(position).getAlbumArtist();
+        if (albumArtist == null || albumArtist.isEmpty()) {
+            albumArtist = albumFiles.get(position).getArtist();
+        }
+        if (albumArtist == null || albumArtist.isEmpty()) {
+            albumArtist = "Unknown Artist";
+        }
+        holder.artist_name.setText(albumArtist);
+        
+        // Store for use in click handler
+        final String displayedArtist = albumArtist;
         
         // Use async art loading to avoid blocking the UI thread during scrolling
         // This is the key fix for RecyclerView jank/stutter
@@ -54,7 +65,7 @@ public class AlbumAdapter extends RecyclerView.Adapter<AlbumAdapter.MyHolder> {
             if (adapterPosition != RecyclerView.NO_POSITION) {
                 Intent intent = new Intent(mContext, AlbumDetails.class);
                 intent.putExtra("albumName", albumFiles.get(adapterPosition).getAlbum());
-                intent.putExtra("artistName", albumFiles.get(adapterPosition).getArtist());
+                intent.putExtra("artistName", displayedArtist);
                 mContext.startActivity(intent);
             }
         });

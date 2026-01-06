@@ -68,6 +68,9 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
                     start();
                     showNotification(R.drawable.ic_pause);
                     updatePlaybackState();
+                    if (actionPlaying != null) {
+                        actionPlaying.playPauseBtnClicked();
+                    }
                 }
             }
 
@@ -77,6 +80,9 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
                     pause();
                     showNotification(R.drawable.ic_play);
                     updatePlaybackState();
+                    if (actionPlaying != null) {
+                        actionPlaying.playPauseBtnClicked();
+                    }
                 }
             }
 
@@ -137,6 +143,10 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
             mediaPlayer.release();
             mediaPlayer = null;
         }
+        
+        // Safety net: clear static references on destroy to prevent zombie state
+        PlayerActivity.passMusicService = null;
+        passPosition = -1;
     }
 
     @Nullable
@@ -205,12 +215,15 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
                 updateMediaSessionMetadata();
                 updatePlaybackState();
                 startProgressUpdates();
+                showNotification(R.drawable.ic_pause);
             }
         }
     }
 
     /**
      * Stops playback, removes notification, and stops the foreground service.
+     * This is the ONLY canonical shutdown path - invoked by the X button.
+     * Idempotent: safe to call multiple times.
      */
     void stopPlayback() {
         if (progressHandler != null) {
@@ -231,6 +244,17 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
                     .setState(PlaybackStateCompat.STATE_STOPPED, 0, 0)
                     .build());
         }
+        
+        // Clear static references to prevent zombie state on app reopen
+        PlayerActivity.passMusicService = null;
+        passPosition = -1;
+        position = -1;
+        
+        // Clear MainActivity static state so mini player doesn't show stale data
+        MainActivity.SHOW_MINI_PLAYER = false;
+        MainActivity.PATH_TO_FRAG = null;
+        MainActivity.ARTIST_TO_FRAG = null;
+        MainActivity.SONG_NAME_TO_FRAG = null;
         
         // Stop foreground and remove notification
         stopForeground(STOP_FOREGROUND_REMOVE);
@@ -501,10 +525,13 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
         String playPauseActionText = isPlaying() ? "Pause" : "Play";
         
         // Build notification with MediaStyle
-        // Actions: Previous (0), Play/Pause (1), Next (2), Stop (3)
-        // Show indices 0, 1, 2 in compact view
+        // Actions: Previous (0), Play/Pause (1), Next (2), Stop/X (3)
+        // Show indices 0, 1, 2, 3 in compact view - modern Android can show 4+ buttons
+        // The X button (Stop) is the ONLY way to dismiss - notification is always ongoing
+        // This prevents swipe-dismiss from causing zombie state
+        boolean playing = isPlaying();
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID_2)
-                .setSmallIcon(R.drawable.ic_play)
+                .setSmallIcon(playing ? R.drawable.ic_pause : R.drawable.ic_play)
                 .setLargeIcon(thumb)
                 .setContentTitle(musicFiles.get(position).getTitle())
                 .setContentText(musicFiles.get(position).getArtist())
@@ -516,13 +543,11 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
                 .setContentIntent(contentIntent)
                 .setStyle(new MediaStyle()
                         .setMediaSession(mediaSessionCompat.getSessionToken())
-                        .setShowActionsInCompactView(0, 1, 2)
-                        .setShowCancelButton(true)
-                        .setCancelButtonIntent(stopPending))
+                        .setShowActionsInCompactView(0, 1, 2, 3))
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOnlyAlertOnce(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setOngoing(isPlaying())
+                .setOngoing(true)
                 .build();
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -536,6 +561,16 @@ public class MusicService extends Service implements MediaPlayer.OnCompletionLis
     }
 
     void playPauseBtnClicked() {
+        // Directly control playback in the service (source of truth)
+        if (isPlaying()) {
+            pause();
+            showNotification(R.drawable.ic_play);
+        } else {
+            start();
+            showNotification(R.drawable.ic_pause);
+        }
+        updatePlaybackState();
+        // Notify activity to sync UI if bound
         if (actionPlaying != null) {
             actionPlaying.playPauseBtnClicked();
         }

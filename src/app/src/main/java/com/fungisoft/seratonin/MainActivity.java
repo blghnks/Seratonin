@@ -51,6 +51,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -69,6 +72,8 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     static boolean shuffleBoolean = false, repeatBoolean = false;
     static ArrayList<MusicFiles> albums = new ArrayList<>();
     private String MY_SORT_PREF = "SortOrder";
+    private static final String KEY_SONGS_SORTING = "songsSorting";
+    private static final String KEY_ALBUMS_SORTING = "albumsSorting";
     public static boolean SHOW_MINI_PLAYER = false;
     public static String PATH_TO_FRAG = null;
     public static String ARTIST_TO_FRAG = null;
@@ -347,22 +352,32 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         PopupMenu popupMenu = new PopupMenu(this, anchor);
         popupMenu.inflate(R.menu.popup_main);
         
+        // Hide sort options for Artists tab (tab 0)
+        int currentTab = viewPager != null ? viewPager.getCurrentItem() : 2;
+        Menu menu = popupMenu.getMenu();
+        MenuItem sortItem = menu.findItem(R.id.sort_options);
+        if (sortItem != null) {
+            sortItem.setVisible(currentTab != 0); // Hide for Artists (tab 0)
+        }
+        
         popupMenu.setOnMenuItemClickListener(item -> {
             int itemId = item.getItemId();
             SharedPreferences.Editor editor = getSharedPreferences(MY_SORT_PREF, MODE_PRIVATE).edit();
+            // Determine which key to use: tab 1 = Albums, tab 2 = Songs
+            String sortKey = (currentTab == 1) ? KEY_ALBUMS_SORTING : KEY_SONGS_SORTING;
             
             if (itemId == R.id.by_title) {
-                editor.putString("sorting", "sortByTitle");
+                editor.putString(sortKey, "sortByTitle");
                 editor.apply();
                 this.recreate();
                 return true;
             } else if (itemId == R.id.by_date) {
-                editor.putString("sorting", "sortByDate");
+                editor.putString(sortKey, "sortByDate");
                 editor.apply();
                 this.recreate();
                 return true;
             } else if (itemId == R.id.by_size) {
-                editor.putString("sorting", "sortBySize");
+                editor.putString(sortKey, "sortBySize");
                 editor.apply();
                 this.recreate();
                 return true;
@@ -709,7 +724,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
 
     /**
      * Get all audio files from a specific folder and its subfolders.
-     * This replaces the old getAllAudio() method that scanned the entire device.
+     * Songs and Albums are sorted independently based on their respective sort preferences.
      *
      * @param context Application context
      * @param folderPath The folder path to scan (selected by user)
@@ -717,42 +732,46 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
      */
     public ArrayList<MusicFiles> getAllAudioFromFolder(Context context, String folderPath) {
         SharedPreferences preferences = getSharedPreferences(MY_SORT_PREF, MODE_PRIVATE);
-        String sortOrder = preferences.getString("sorting", "sortByName");
-        ArrayList<String> duplicate = new ArrayList<>();
+        String songsSortOrder = preferences.getString(KEY_SONGS_SORTING, 
+                preferences.getString("sorting", "sortByTitle")); // Migrate old key
+        String albumsSortOrder = preferences.getString(KEY_ALBUMS_SORTING, "sortByTitle");
+        
         ArrayList<MusicFiles> tempAudioList = new ArrayList<>();
         albums.clear();
         
-        String order = null;
-        Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        switch (sortOrder) {
-            case "sortByTitle":
-                order = MediaStore.MediaColumns.TITLE + " ASC ";
-                break;
-            case "sortByDate":
-                order = MediaStore.MediaColumns.DATE_ADDED + " DESC ";
-                break;
-            case "sortBySize":
-                order = MediaStore.MediaColumns.SIZE + " DESC ";
-                break;
-        }
+        // Album aggregates: key = normalized album name, value = [totalSize, year, representative MusicFiles]
+        HashMap<String, long[]> albumSizeMap = new HashMap<>();
+        HashMap<String, String> albumYearMap = new HashMap<>();
+        HashMap<String, String> albumArtistMap = new HashMap<>();
+        HashMap<String, MusicFiles> albumRepresentative = new HashMap<>();
         
+        Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        
+        // Query without ORDER BY - we'll sort in-memory after enriching with cached metadata
         String[] projection = {
                 MediaStore.Audio.Media.ALBUM,
                 MediaStore.Audio.Media.TITLE,
                 MediaStore.Audio.Media.DURATION,
                 MediaStore.Audio.Media.DATA,
                 MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media._ID
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.YEAR
         };
         
-        // Filter by folder path - only get files under the selected folder
-        // Use LIKE with wildcard to match all files in folder and subfolders
         String selection = MediaStore.Audio.Media.DATA + " LIKE ?";
         String[] selectionArgs = new String[]{ folderPath + "%" };
         
         Log.d(TAG, "Querying MediaStore for files in: " + folderPath);
         
-        Cursor cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, order);
+        // Build a cache lookup map for year data
+        MusicCacheDatabase cache = MusicCacheDatabase.getInstance(context);
+        Map<String, MusicCacheDatabase.CachedSongMetadata> cachedMap = new HashMap<>();
+        for (MusicCacheDatabase.CachedSongMetadata cached : cache.getAllCachedSongs()) {
+            cachedMap.put(cached.path, cached);
+        }
+        
+        Cursor cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, null);
         if (cursor != null) {
             Log.d(TAG, "Found " + cursor.getCount() + " audio files");
             while (cursor.moveToNext()) {
@@ -762,16 +781,58 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                 String path = cursor.getString(3);
                 String artist = cursor.getString(4);
                 String id = cursor.getString(5);
+                long size = cursor.getLong(6);
+                String year = cursor.getString(7);
 
-                MusicFiles musicFiles = new MusicFiles(path, title, artist, album, duration, id);
-                Log.d(TAG, "Found: " + title + " at " + path);
-                tempAudioList.add(musicFiles);
+                MusicFiles musicFile = new MusicFiles(path, title, artist, album, duration, id);
+                musicFile.setSize(size);
                 
-                // Use normalized album name for deduplication to handle encoding issues
+                // Set year from MediaStore first (reliable, fast)
+                if (year != null && !year.isEmpty() && !"0".equals(year)) {
+                    musicFile.setYear(year);
+                } else {
+                    // Fallback to cache if MediaStore doesn't have year
+                    MusicCacheDatabase.CachedSongMetadata cached = cachedMap.get(path);
+                    if (cached != null && cached.year != null) {
+                        musicFile.setYear(cached.year);
+                    }
+                }
+                
+                Log.d(TAG, "Found: " + title + " at " + path);
+                tempAudioList.add(musicFile);
+                
+                // Aggregate album data
                 String normalizedAlbum = StringNormalizer.normalizeForComparison(album);
-                if (!duplicate.contains(normalizedAlbum)) {
-                    albums.add(musicFiles);
-                    duplicate.add(normalizedAlbum);
+                
+                // Get album artist from cache if available
+                MusicCacheDatabase.CachedSongMetadata cachedMeta = cachedMap.get(path);
+                String trackAlbumArtist = (cachedMeta != null && cachedMeta.albumArtist != null) ? cachedMeta.albumArtist : "";
+                
+                long[] sizeArr = albumSizeMap.get(normalizedAlbum);
+                if (sizeArr == null) {
+                    albumSizeMap.put(normalizedAlbum, new long[]{size});
+                    albumYearMap.put(normalizedAlbum, musicFile.getYear());
+                    albumArtistMap.put(normalizedAlbum, trackAlbumArtist);
+                    albumRepresentative.put(normalizedAlbum, musicFile);
+                } else {
+                    sizeArr[0] += size;
+                    // Use earliest year for album (non-empty wins)
+                    String existingYear = albumYearMap.get(normalizedAlbum);
+                    String newYear = musicFile.getYear();
+                    if ((existingYear == null || existingYear.isEmpty()) && newYear != null && !newYear.isEmpty()) {
+                        albumYearMap.put(normalizedAlbum, newYear);
+                    } else if (existingYear != null && !existingYear.isEmpty() && newYear != null && !newYear.isEmpty()) {
+                        int existingYearInt = parseYear(existingYear);
+                        int newYearInt = parseYear(newYear);
+                        if (newYearInt > 0 && (existingYearInt == 0 || newYearInt < existingYearInt)) {
+                            albumYearMap.put(normalizedAlbum, newYear);
+                        }
+                    }
+                    // Use first non-empty album artist found
+                    String existingAlbumArtist = albumArtistMap.get(normalizedAlbum);
+                    if ((existingAlbumArtist == null || existingAlbumArtist.isEmpty()) && !trackAlbumArtist.isEmpty()) {
+                        albumArtistMap.put(normalizedAlbum, trackAlbumArtist);
+                    }
                 }
             }
             cursor.close();
@@ -779,7 +840,150 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             Log.e(TAG, "MediaStore query returned null cursor");
         }
         
+        // Sort songs in-memory
+        sortMusicFiles(tempAudioList, songsSortOrder);
+        
+        // Build and sort albums list
+        ArrayList<MusicFiles> albumsList = new ArrayList<>(albumRepresentative.values());
+        // Set aggregated size, year, and album artist on album representatives
+        for (MusicFiles albumRep : albumsList) {
+            String normalizedAlbum = StringNormalizer.normalizeForComparison(albumRep.getAlbum());
+            long[] sizeArr = albumSizeMap.get(normalizedAlbum);
+            if (sizeArr != null) {
+                albumRep.setSize(sizeArr[0]);
+            }
+            String year = albumYearMap.get(normalizedAlbum);
+            if (year != null) {
+                albumRep.setYear(year);
+            }
+            String albumArtist = albumArtistMap.get(normalizedAlbum);
+            if (albumArtist != null) {
+                albumRep.setAlbumArtist(albumArtist);
+            }
+        }
+        sortAlbums(albumsList, albumsSortOrder);
+        albums.clear();
+        albums.addAll(albumsList);
+        
         return tempAudioList;
+    }
+    
+    /**
+     * Sort songs in-place based on sort order.
+     */
+    private void sortMusicFiles(ArrayList<MusicFiles> list, String sortOrder) {
+        Comparator<MusicFiles> comparator;
+        switch (sortOrder) {
+            case "sortByDate":
+                comparator = (a, b) -> {
+                    int yearA = parseYear(a.getYear());
+                    int yearB = parseYear(b.getYear());
+                    // Descending by year (newest first)
+                    int cmp = Integer.compare(yearB, yearA);
+                    if (cmp == 0) {
+                        // Group songs from the same album together
+                        String albumA = a.getAlbum() != null ? a.getAlbum() : "";
+                        String albumB = b.getAlbum() != null ? b.getAlbum() : "";
+                        cmp = albumA.compareToIgnoreCase(albumB);
+                    }
+                    if (cmp == 0) {
+                        // Within same album, sort by title
+                        String titleA = a.getTitle() != null ? a.getTitle() : "";
+                        String titleB = b.getTitle() != null ? b.getTitle() : "";
+                        cmp = titleA.compareToIgnoreCase(titleB);
+                    }
+                    return cmp;
+                };
+                break;
+            case "sortBySize":
+                comparator = (a, b) -> {
+                    // Descending by size
+                    int cmp = Long.compare(b.getSize(), a.getSize());
+                    if (cmp == 0) {
+                        String titleA = a.getTitle() != null ? a.getTitle() : "";
+                        String titleB = b.getTitle() != null ? b.getTitle() : "";
+                        cmp = titleA.compareToIgnoreCase(titleB);
+                    }
+                    return cmp;
+                };
+                break;
+            case "sortByTitle":
+            default:
+                comparator = (a, b) -> {
+                    String titleA = a.getTitle() != null ? a.getTitle() : "";
+                    String titleB = b.getTitle() != null ? b.getTitle() : "";
+                    return titleA.compareToIgnoreCase(titleB);
+                };
+                break;
+        }
+        Collections.sort(list, comparator);
+    }
+    
+    /**
+     * Sort albums in-place based on sort order.
+     * Uses album title (not song title) for title sorting.
+     */
+    private void sortAlbums(ArrayList<MusicFiles> list, String sortOrder) {
+        Comparator<MusicFiles> comparator;
+        switch (sortOrder) {
+            case "sortByDate":
+                comparator = (a, b) -> {
+                    int yearA = parseYear(a.getYear());
+                    int yearB = parseYear(b.getYear());
+                    // Descending by year (newest first), fallback to album title
+                    int cmp = Integer.compare(yearB, yearA);
+                    if (cmp == 0) {
+                        String albumA = a.getAlbum() != null ? a.getAlbum() : "";
+                        String albumB = b.getAlbum() != null ? b.getAlbum() : "";
+                        cmp = albumA.compareToIgnoreCase(albumB);
+                    }
+                    return cmp;
+                };
+                break;
+            case "sortBySize":
+                comparator = (a, b) -> {
+                    // Descending by total album size
+                    int cmp = Long.compare(b.getSize(), a.getSize());
+                    if (cmp == 0) {
+                        String albumA = a.getAlbum() != null ? a.getAlbum() : "";
+                        String albumB = b.getAlbum() != null ? b.getAlbum() : "";
+                        cmp = albumA.compareToIgnoreCase(albumB);
+                    }
+                    return cmp;
+                };
+                break;
+            case "sortByTitle":
+            default:
+                comparator = (a, b) -> {
+                    String albumA = a.getAlbum() != null ? a.getAlbum() : "";
+                    String albumB = b.getAlbum() != null ? b.getAlbum() : "";
+                    return albumA.compareToIgnoreCase(albumB);
+                };
+                break;
+        }
+        Collections.sort(list, comparator);
+    }
+    
+    /**
+     * Parse year string to integer. Returns 0 for invalid/missing years.
+     * Handles formats like "2025", "2025-01-01", etc.
+     */
+    private int parseYear(String yearStr) {
+        if (yearStr == null || yearStr.isEmpty()) {
+            return 0;
+        }
+        try {
+            // Extract first 4 digits if present
+            String cleaned = yearStr.replaceAll("[^0-9]", "");
+            if (cleaned.length() >= 4) {
+                return Integer.parseInt(cleaned.substring(0, 4));
+            } else if (!cleaned.isEmpty()) {
+                return Integer.parseInt(cleaned);
+            }
+        } catch (NumberFormatException e) {
+            // Ignore parse errors
+        }
+        return 0;
     }
 
     @Override
@@ -813,16 +1017,20 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         SharedPreferences.Editor editor = getSharedPreferences(MY_SORT_PREF, MODE_PRIVATE).edit();
         int itemId = item.getItemId();
+        // Determine which key to use based on current tab: tab 1 = Albums, tab 2 = Songs
+        int currentTab = viewPager != null ? viewPager.getCurrentItem() : 2;
+        String sortKey = (currentTab == 1) ? KEY_ALBUMS_SORTING : KEY_SONGS_SORTING;
+        
         if (itemId == R.id.by_title) {
-            editor.putString("sorting", "sortByTitle");
+            editor.putString(sortKey, "sortByTitle");
             editor.apply();
             this.recreate();
         } else if (itemId == R.id.by_date) {
-            editor.putString("sorting", "sortByDate");
+            editor.putString(sortKey, "sortByDate");
             editor.apply();
             this.recreate();
         } else if (itemId == R.id.by_size) {
-            editor.putString("sorting", "sortBySize");
+            editor.putString(sortKey, "sortBySize");
             editor.apply();
             this.recreate();
         } else if (itemId == R.id.rescan_folders) {
