@@ -20,10 +20,8 @@ import java.util.Set;
 
 import static com.fungisoft.seratonin.MainActivity.musicFiles;
 
-/**
- * Activity to display albums filtered by a specific artist.
- */
 public class ArtistAlbumsActivity extends AppCompatActivity {
+    private static final String STATE_ARTIST_NAME = "artist";
 
     RecyclerView recyclerView;
     ImageView backButton;
@@ -51,7 +49,12 @@ public class ArtistAlbumsActivity extends AppCompatActivity {
         backButton = findViewById(R.id.back_button);
         artistNameText = findViewById(R.id.artist_name_title);
         
-        artistName = getIntent().getStringExtra("artistName");
+        // Restore state from savedInstanceState first, then fall back to intent
+        if (savedInstanceState != null) {
+            artistName = savedInstanceState.getString(STATE_ARTIST_NAME);
+        } else {
+            artistName = getIntent().getStringExtra("artistName");
+        }
         if (artistName != null) {
             artistNameText.setText(artistName);
         }
@@ -62,9 +65,11 @@ public class ArtistAlbumsActivity extends AppCompatActivity {
             for (MusicFiles music : musicFiles) {
                 if (artistName != null && artistName.equals(music.getArtist())) {
                     String album = music.getAlbum();
-                    if (album != null && !seenAlbums.contains(album)) {
+                    // Use normalized album name for deduplication to handle encoding issues
+                    String normalizedAlbum = StringNormalizer.normalizeForComparison(album);
+                    if (album != null && !seenAlbums.contains(normalizedAlbum)) {
                         artistAlbums.add(music);
-                        seenAlbums.add(album);
+                        seenAlbums.add(normalizedAlbum);
                     }
                 }
             }
@@ -81,6 +86,12 @@ public class ArtistAlbumsActivity extends AppCompatActivity {
             }
         });
     }
+    
+    @Override
+    protected void onSaveInstanceState(@androidx.annotation.NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(STATE_ARTIST_NAME, artistName);
+    }
 
     @Override
     protected void onResume() {
@@ -88,7 +99,9 @@ public class ArtistAlbumsActivity extends AppCompatActivity {
         if (!artistAlbums.isEmpty()) {
             albumAdapter = new AlbumAdapter(this, artistAlbums);
             recyclerView.setAdapter(albumAdapter);
-            recyclerView.setLayoutManager(new GridLayoutManager(this, 2));
+            int spanCount = getResources().getConfiguration().orientation == 
+                android.content.res.Configuration.ORIENTATION_LANDSCAPE ? 3 : 2;
+            recyclerView.setLayoutManager(new GridLayoutManager(this, spanCount));
         }
     }
 }

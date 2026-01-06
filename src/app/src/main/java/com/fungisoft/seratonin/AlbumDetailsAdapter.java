@@ -51,7 +51,7 @@ public class AlbumDetailsAdapter extends RecyclerView.Adapter<AlbumDetailsAdapte
         holder.album_name.setText(albumFiles.get(position).getTitle());
         holder.artist_name.setText(albumFiles.get(position).getArtist());
         int duration = Integer.parseInt(albumFiles.get(position).getDuration()) / 1000;
-        holder.alb_duration.setText(formattedTime(duration));
+        holder.alb_duration.setText(TimeFormatter.formatTime(duration));
         
         // Use async art loading to avoid blocking the UI thread during scrolling
         // This is the key fix for RecyclerView jank/stutter
@@ -72,30 +72,10 @@ public class AlbumDetailsAdapter extends RecyclerView.Adapter<AlbumDetailsAdapte
         holder.itemView.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION) return;
-//                Boolean isAlbumDetailsPlaying = mContext.getSharedPreferences("PreferenceAlbumPlay", MODE_PRIVATE).getBoolean("isAlbumPlaying", true);
-//                if (isAlbumDetailsPlaying){
-//                    NowPlayingFragmentBottom.setLayoutVisible();
-////            getSharedPreferences("PreferenceAlbumPlay", MODE_PRIVATE).edit().putBoolean("isAlbumPlaying", false).apply();
-//                }
-//                Uri uri = Uri.parse(albumFiles.get(adapterPosition).getPath());
-//                SharedPreferences.Editor editor = mContext.getSharedPreferences(MUSIC_LAST_PLAYED, MODE_PRIVATE).edit();
-//                editor.putString(MUSIC_FILE, uri.toString());
-//                editor.putString(ARTIST_NAME, albumFiles.get(adapterPosition).getArtist());
-//                editor.putString(SONG_NAME, albumFiles.get(adapterPosition).getTitle());
-//                editor.apply();
-//                if (image != null){
-//                    Glide.with(mContext).load(getAlbumArt(albumFiles.get(adapterPosition).getPath()))
-//                            .into(NowPlayingFragmentBottom.albumArt);
-//                }else{
-////                Toast.makeText(musicService, "Art is NULL!!!", Toast.LENGTH_SHORT).show();
-//                }
-//                NowPlayingFragmentBottom.songName.setText(albumFiles.get(adapterPosition).getTitle());
-//                NowPlayingFragmentBottom.artist.setText(albumFiles.get(adapterPosition).getArtist());
             Intent intent = new Intent(mContext, PlayerActivity.class);
             intent.putExtra("sender", "albumDetails");
             intent.putExtra("positionAlbum", adapterPosition);
             mContext.startActivity(intent);
-//                Toast.makeText(mContext, "Album Clicked!!!!", Toast.LENGTH_SHORT).show();
         });
         
         // More options menu button click handler
@@ -189,21 +169,6 @@ public class AlbumDetailsAdapter extends RecyclerView.Adapter<AlbumDetailsAdapte
         });
         
         dialog.show();
-    }
-
-    private String formattedTime(int albCurrentPosition) {
-        String totalout;
-        String totalNew;
-        String seconds = String.valueOf(albCurrentPosition % 60);
-        String minutes = String.valueOf(albCurrentPosition / 60);
-        totalout = minutes + ":" + seconds;
-        totalNew = minutes + ":" + "0" + seconds;
-        if (seconds.length() == 1){
-            return totalNew;
-        }
-        else{
-            return totalout;
-        }
     }
 
     @Override

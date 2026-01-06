@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import static com.fungisoft.seratonin.MainActivity.musicFiles;
 
 public class AlbumDetails extends AppCompatActivity {
+    private static final String STATE_ALBUM_NAME = "album", STATE_ARTIST_NAME = "artist";
 
     RecyclerView recyclerView;
     ImageView albumPhoto, backButton;
@@ -53,13 +54,23 @@ public class AlbumDetails extends AppCompatActivity {
         // Back button click
         backButton.setOnClickListener(v -> finish());
         
-        artistName = getIntent().getStringExtra("artistName");
-        albumName = getIntent().getStringExtra("albumName");
+        // Restore state from savedInstanceState first, then fall back to intent
+        if (savedInstanceState != null) {
+            artistName = savedInstanceState.getString(STATE_ARTIST_NAME);
+            albumName = savedInstanceState.getString(STATE_ALBUM_NAME);
+        } else {
+            artistName = getIntent().getStringExtra("artistName");
+            albumName = getIntent().getStringExtra("albumName");
+        }
         passAlbumName.setText(albumName);
         passArtistName.setText(artistName);
+        
+        // Use normalized comparison to match songs with encoding variations
+        String normalizedAlbumName = StringNormalizer.normalizeForComparison(albumName);
         int j = 0;
         for (int i = 0 ; i < musicFiles.size() ; i ++) {
-            if (albumName.equals(musicFiles.get(i).getAlbum())){
+            String normalizedSongAlbum = StringNormalizer.normalizeForComparison(musicFiles.get(i).getAlbum());
+            if (normalizedAlbumName.equals(normalizedSongAlbum)){
                 albumSongs.add(j, musicFiles.get(i));
                 j++;
             }
@@ -104,5 +115,12 @@ public class AlbumDetails extends AppCompatActivity {
             recyclerView.setAdapter(albumDetailsAdapter);
             recyclerView.setLayoutManager(new LinearLayoutManager(this, RecyclerView.VERTICAL,false));
         }
+    }
+    
+    @Override
+    protected void onSaveInstanceState(@androidx.annotation.NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(STATE_ALBUM_NAME, albumName);
+        outState.putString(STATE_ARTIST_NAME, artistName);
     }
 }

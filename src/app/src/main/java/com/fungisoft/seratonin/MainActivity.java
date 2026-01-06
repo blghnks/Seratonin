@@ -6,7 +6,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.view.menu.MenuWrapperICS;
 import androidx.appcompat.widget.SearchView;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.app.ActivityCompat;
@@ -56,22 +55,24 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class MainActivity extends AppCompatActivity implements SearchView.OnQueryTextListener {
+import static com.fungisoft.seratonin.MusicService.MUSIC_LAST_PLAYED;
+import static com.fungisoft.seratonin.MusicService.MUSIC_FILE;
+import static com.fungisoft.seratonin.MusicService.ARTIST_NAME;
+import static com.fungisoft.seratonin.MusicService.SONG_NAME;
 
+public class MainActivity extends AppCompatActivity implements SearchView.OnQueryTextListener {
     private static final String TAG = "MainActivity";
+    private static final String STATE_SELECTED_TAB = "tab";
+    
     public static final int REQUEST_CODE = 1;
     static ArrayList<MusicFiles> musicFiles;
     static boolean shuffleBoolean = false, repeatBoolean = false;
     static ArrayList<MusicFiles> albums = new ArrayList<>();
     private String MY_SORT_PREF = "SortOrder";
-    public static final String MUSIC_LAST_PLAYED = "LAST_PLAYED";
-    public static final String MUSIC_FILE = "STORED_MUSIC";
     public static boolean SHOW_MINI_PLAYER = false;
     public static String PATH_TO_FRAG = null;
     public static String ARTIST_TO_FRAG = null;
     public static String SONG_NAME_TO_FRAG = null;
-    public static final String ARTIST_NAME = "ARTIST NAME";
-    public static final String SONG_NAME = "SONG NAME";
     
     // Executor for background tasks
     private ExecutorService executor;
@@ -84,10 +85,15 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     
     // M3U import launcher
     private ActivityResultLauncher<Intent> m3uImportLauncher;
+    
+    // ViewPager for tab restoration
+    private ViewPager2 viewPager;
+    private int savedTabPosition = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) savedTabPosition = savedInstanceState.getInt(STATE_SELECTED_TAB, 0);
         
         // Initialize M3U import launcher
         m3uImportLauncher = registerForActivityResult(
@@ -132,9 +138,9 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         boolean isFolderChange = getIntent().getBooleanExtra("is_folder_change", false);
         loadMusic(runFullScan, isFolderChange);
         
-        final SharedPreferences mSharedPreference= PreferenceManager.getDefaultSharedPreferences(this);
-        Boolean passedPlayerAct=(mSharedPreference.getBoolean("playerActivitypass", false));
-        if (passedPlayerAct == false){
+        final SharedPreferences mSharedPreference = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean passedPlayerAct = mSharedPreference.getBoolean("playerActivitypass", false);
+        if (!passedPlayerAct) {
             NowPlayingFragmentBottom.setLayoutInvisible();
         }
         if (PlayerActivity.passMusicService != null){
@@ -632,8 +638,9 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             if (processedFolders.contains(folderPath)) continue;
             processedFolders.add(folderPath);
             
-            // Skip if already cached
-            if (cache.hasAlbumArtCache(folderPath)) continue;
+            // Skip if already cached (use album-level cache key)
+            String albumCacheKey = MusicCacheDatabase.getAlbumCacheKey(folderPath);
+            if (cache.hasCachedArtByKey(albumCacheKey)) continue;
             
             // Load and cache album art
             byte[] art = AlbumArtHelper.getAlbumArtForAlbum(this, path);
@@ -644,7 +651,7 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
     }
 
     private void initViewPager() {
-        ViewPager2 viewPager = findViewById(R.id.viewpager);
+        viewPager = findViewById(R.id.viewpager);
         TabLayout tabLayout = findViewById(R.id.tab_layout);
         ViewPagerAdapter viewPagerAdapter = new ViewPagerAdapter(this);
         viewPagerAdapter.addFragments(new ArtistsFragment(), "Artists");
@@ -657,6 +664,17 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         new com.google.android.material.tabs.TabLayoutMediator(tabLayout, viewPager,
                 (tab, position) -> tab.setText(viewPagerAdapter.getTitle(position))
         ).attach();
+        
+        // Restore saved tab position after configuration change
+        if (savedTabPosition > 0 && savedTabPosition < viewPagerAdapter.getItemCount()) {
+            viewPager.setCurrentItem(savedTabPosition, false);
+        }
+    }
+    
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (viewPager != null) outState.putInt(STATE_SELECTED_TAB, viewPager.getCurrentItem());
     }
 
     public static class ViewPagerAdapter extends FragmentStateAdapter {
@@ -749,9 +767,11 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
                 Log.d(TAG, "Found: " + title + " at " + path);
                 tempAudioList.add(musicFiles);
                 
-                if (!duplicate.contains(album)) {
+                // Use normalized album name for deduplication to handle encoding issues
+                String normalizedAlbum = StringNormalizer.normalizeForComparison(album);
+                if (!duplicate.contains(normalizedAlbum)) {
                     albums.add(musicFiles);
-                    duplicate.add(album);
+                    duplicate.add(normalizedAlbum);
                 }
             }
             cursor.close();
@@ -759,69 +779,6 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
             Log.e(TAG, "MediaStore query returned null cursor");
         }
         
-        return tempAudioList;
-    }
-
-    /**
-     * @deprecated Use getAllAudioFromFolder instead for folder-restricted scanning
-     */
-    @Deprecated
-    public ArrayList<MusicFiles> getAllAudio(Context context)
-    {
-        SharedPreferences preferences = getSharedPreferences(MY_SORT_PREF, MODE_PRIVATE);
-        String sortOrder = preferences.getString("sorting", "sortByName");
-        ArrayList<String> duplicate = new ArrayList<>();
-        ArrayList<MusicFiles> tempAudioList = new ArrayList<>();
-        albums.clear();
-        String order = null;
-        Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        switch (sortOrder){
-            case "sortByTitle":
-                order = MediaStore.MediaColumns.TITLE + " ASC ";
-                break;
-            case "sortByDate":
-                order = MediaStore.MediaColumns.DATE_ADDED + " DESC ";
-                break;
-            case "sortBySize":
-                order = MediaStore.MediaColumns.SIZE + " DESC ";
-                break;
-        }
-        String[] projection = {
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.DATA,                // --------FOR PATH--------
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media._ID
-//                MediaStore.Audio.Media.GENRE,
-//                MediaStore.Audio.Media.CD_TRACK_NUMBER,
-//                MediaStore.Audio.Media.ALBUM_ARTIST
-        };
-        Cursor cursor = context.getContentResolver().query(uri, projection, null, null, order);
-        if(cursor != null)
-        {
-            while (cursor.moveToNext()){
-                String album = cursor.getString(0);
-                String title = cursor.getString(1);
-                String duration = cursor.getString(2);
-                String path = cursor.getString(3);
-                String artist = cursor.getString(4);
-                String id = cursor.getString(5);
-//                String genre = cursor.getString(5);
-//                String trackNumber = cursor.getString(6);
-//                String albumArtist = cursor.getString(7);
-
-                MusicFiles musicFiles = new MusicFiles(path, title, artist, album, duration, id);
-//                take log.e for check
-                Log.e("Path: " + path, "Album: " + album);
-                tempAudioList.add(musicFiles);
-                if(!duplicate.contains(album)){
-                    albums.add(musicFiles);
-                    duplicate.add(album);
-                }
-            }
-            cursor.close();
-        }
         return tempAudioList;
     }
 

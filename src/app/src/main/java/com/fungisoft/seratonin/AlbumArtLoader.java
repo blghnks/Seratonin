@@ -20,6 +20,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.fungisoft.seratonin.PlayerActivity.isValidContextForGlide;
+
 /**
  * Asynchronous album art loader that avoids blocking the main thread.
  * Uses an LRU memory cache and background thread pool for loading.
@@ -92,6 +94,12 @@ public class AlbumArtLoader {
      * Load album art for a song/album into an ImageView asynchronously.
      * This is the main entry point for adapters.
      * 
+     * Cache key strategy:
+     * - For albums: uses folder-based key (shared per folder, external art priority)
+     * - For songs: uses song-based key (unique per track, embedded art priority)
+     * 
+     * This preserves the original behavior where songs can display unique embedded art.
+     * 
      * @param context Application context
      * @param musicFilePath Path to the music file
      * @param imageView Target ImageView (weak referenced to avoid leaks)
@@ -109,9 +117,9 @@ public class AlbumArtLoader {
         File parentDir = musicFile.getParentFile();
         String folderPath = parentDir != null ? parentDir.getAbsolutePath() : musicFilePath;
         
-        // Generate context-aware cache key:
-        // - For songs: unique per track (to support individual embedded art)
-        // - For albums: shared per folder (for consistent album covers)
+        // Generate cache key based on context:
+        // - For albums: folder-based (shared, external art priority)
+        // - For songs: song-based (unique, embedded art priority)
         String cacheKey;
         if (forAlbum) {
             cacheKey = "album:" + folderPath;
@@ -131,7 +139,7 @@ public class AlbumArtLoader {
         
         // Show placeholder immediately (with safety check)
         try {
-            if (isValidContext(context)) {
+            if (isValidContextForGlide(context)) {
                 Glide.with(context)
                         .load(placeholderResId)
                         .into(imageView);
@@ -142,18 +150,6 @@ public class AlbumArtLoader {
         
         // Load in background
         loadAsync(context, musicFilePath, cacheKey, imageView, placeholderResId, forAlbum);
-    }
-    
-    /**
-     * Check if context is valid for Glide operations.
-     */
-    private boolean isValidContext(Context context) {
-        if (context == null) return false;
-        if (context instanceof android.app.Activity) {
-            android.app.Activity activity = (android.app.Activity) context;
-            return !activity.isFinishing() && !activity.isDestroyed();
-        }
-        return true;
     }
     
     /**
@@ -251,7 +247,7 @@ public class AlbumArtLoader {
     private void loadIntoImageView(Context context, ImageView imageView, byte[] artData, 
                                     String cacheKey, int placeholderResId) {
         // Safety check - avoid Glide crashes on destroyed activities
-        if (!isValidContext(context)) {
+        if (!isValidContextForGlide(context)) {
             return;
         }
         
@@ -280,19 +276,19 @@ public class AlbumArtLoader {
      * Get song art synchronously from cache only (for cases where we need immediate result).
      * Returns null if not in cache - caller must handle gracefully.
      * 
-     * This uses song-level cache key (embedded-first priority).
+     * Uses song-level cache key to support unique embedded art per track.
      */
     public byte[] getFromCacheOnly(String musicFilePath) {
         if (musicFilePath == null) return null;
         
-        // Use song-level cache key
+        // Use song-level cache key (supports unique embedded art)
         String cacheKey = "song:" + musicFilePath;
         return memoryCache.get(cacheKey);
     }
     
     /**
      * Get album art synchronously from cache only.
-     * Uses album-level cache key (folder-based, external-first priority).
+     * Uses album-level cache key (folder-based).
      */
     public byte[] getAlbumArtFromCacheOnly(String musicFilePath) {
         if (musicFilePath == null) return null;
@@ -353,7 +349,7 @@ public class AlbumArtLoader {
     }
     
     /**
-     * Invalidate cache for a specific folder (both song and album level entries).
+     * Invalidate cache for a specific folder (album-level entries).
      */
     public void invalidateFolder(String folderPath) {
         if (folderPath == null) return;
@@ -361,22 +357,20 @@ public class AlbumArtLoader {
         // Invalidate album-level cache
         String albumCacheKey = "album:" + folderPath;
         memoryCache.remove(albumCacheKey);
-        
-        // Note: Song-level cache entries are keyed by full song path,
-        // so we can't efficiently clear them without iterating.
-        // They will be naturally invalidated by file modification time checks.
     }
     
     /**
      * Invalidate cache for a specific song file.
+     * Clears both song-level and album-level cache entries.
      */
     public void invalidateSong(String songPath) {
         if (songPath == null) return;
         
+        // Invalidate song-level cache
         String songCacheKey = "song:" + songPath;
         memoryCache.remove(songCacheKey);
         
-        // Also invalidate the album-level cache for consistency
+        // Also invalidate album-level cache for consistency
         File songFile = new File(songPath);
         File parentDir = songFile.getParentFile();
         if (parentDir != null) {

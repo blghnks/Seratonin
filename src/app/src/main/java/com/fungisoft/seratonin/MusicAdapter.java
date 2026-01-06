@@ -51,7 +51,7 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
         holder.file_name.setText(mFiles.get(position).getTitle());
         holder.artist_name.setText(mFiles.get(position).getArtist());
         int totalDuration = Integer.parseInt(mFiles.get(position).getDuration()) / 1000;
-        holder.duration.setText(formatTime(totalDuration));
+        holder.duration.setText(TimeFormatter.formatTime(totalDuration));
         
         // Use async art loading to avoid blocking the UI thread during scrolling
         // This is the key fix for RecyclerView jank/stutter
@@ -65,24 +65,6 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
         holder.itemView.setOnClickListener(v -> {
             int adapterPosition = holder.getBindingAdapterPosition();
             if (adapterPosition == RecyclerView.NO_POSITION) return;
-//                Boolean isPlayerActivityRun = mContext.getSharedPreferences("PreferencePlayerActivity", MODE_PRIVATE).getBoolean("isPlayerActivityFirstrun", true);
-//                if (isPlayerActivityRun){
-//                    NowPlayingFragmentBottom.setLayoutVisible();
-////            getSharedPreferences("PreferencePlayerActivity", MODE_PRIVATE).edit().putBoolean("isPlayerActivityFirstrun", false).apply();
-//                }
-//                SharedPreferences.Editor editor = mContext.getSharedPreferences(MUSIC_LAST_PLAYED, MODE_PRIVATE).edit();
-//                editor.putString(MUSIC_FILE, mFiles.get(adapterPosition).getPath());
-//                editor.putString(ARTIST_NAME, mFiles.get(adapterPosition).getArtist());
-//                editor.putString(SONG_NAME, mFiles.get(adapterPosition).getTitle());
-//                editor.apply();
-//                if (image != null){
-//                    Glide.with(mContext).load(getAlbumArt(mFiles.get(adapterPosition).getPath()))
-//                            .into(NowPlayingFragmentBottom.albumArt);
-//                }else{
-////                Toast.makeText(musicService, "Art is NULL!!!", Toast.LENGTH_SHORT).show();
-//                }
-//                NowPlayingFragmentBottom.songName.setText(mFiles.get(adapterPosition).getTitle());
-//                NowPlayingFragmentBottom.artist.setText(mFiles.get(adapterPosition).getArtist());
             Intent intent = new Intent(mContext, PlayerActivity.class);
             intent.putExtra("musicAdapter", "MusicAdapt");
             intent.putExtra("positionMfiles", adapterPosition);
@@ -107,15 +89,6 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
         });
     }
 
-    /**
-     * Format seconds into mm:ss format.
-     * @deprecated Use {@link TimeFormatter#formatTime(int)} instead.
-     */
-    @Deprecated
-    private String formatTime(int mCurrentPosition) {
-        return TimeFormatter.formatTime(mCurrentPosition);
-    }
-
     private void deleteFile(int position, View v) {
         Uri contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, Long.parseLong(mFiles.get(position).getId())); //content: //
         File file = new File(mFiles.get(position).getPath());
@@ -128,7 +101,6 @@ public class MusicAdapter extends RecyclerView.Adapter<MusicAdapter.MyVieHolder>
             Snackbar.make(v, "File Deleted : ", Snackbar.LENGTH_LONG)
                     .show();
         } else {
-//            may be file in sd card of api level is 19 or more
             Snackbar.make(v, "File cannot be deleted.", Snackbar.LENGTH_LONG)
                     .show();
         }

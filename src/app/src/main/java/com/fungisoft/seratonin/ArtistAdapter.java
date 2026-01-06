@@ -64,7 +64,8 @@ public class ArtistAdapter extends RecyclerView.Adapter<ArtistAdapter.ArtistView
                 if (artistName.equals(music.getArtist())) {
                     String album = music.getAlbum();
                     if (album != null && !album.isEmpty()) {
-                        albums.add(album);
+                        // Use normalized album name to handle encoding issues
+                        albums.add(StringNormalizer.normalizeForComparison(album));
                     }
                 }
             }

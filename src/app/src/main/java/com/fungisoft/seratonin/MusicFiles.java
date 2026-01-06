@@ -7,10 +7,6 @@ public class MusicFiles {
     private final String album;
     private final String duration;
     private String id;
-//    private String genre;
-//    private String trackNumber;
-//    private String albumArtist;
-
 
     public MusicFiles(String path, String title, String artist, String album, String duration, String id) {
         this.path = path;
@@ -19,9 +15,6 @@ public class MusicFiles {
         this.album = album;
         this.duration = duration;
         this.id = id;
-//        this.genre = genre;
-//        this.trackNumber = trackNumber;
-//        this.albumArtist = albumArtist;
     }
 
     public String getPath() {

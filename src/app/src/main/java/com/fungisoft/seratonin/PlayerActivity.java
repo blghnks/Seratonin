@@ -48,7 +48,6 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Random;
 
 import static com.fungisoft.seratonin.AlbumDetailsAdapter.albumFiles;
 import static com.fungisoft.seratonin.MainActivity.repeatBoolean;
@@ -57,6 +56,8 @@ import static com.fungisoft.seratonin.MusicAdapter.mFiles;
 
 public class PlayerActivity extends AppCompatActivity implements ActionPlaying, ServiceConnection,
         QueueAdapter.OnQueueItemClickListener {
+    private static final String STATE_POSITION = "pos", STATE_SHUFFLE = "shuf", STATE_REPEAT = "rep",
+            STATE_IS_PLAYING = "play", STATE_SEEK_POSITION = "seek";
 
     TextView song_name, artist_name, duration_played, duration_total, album_name, textNowplaying;
     ImageView cover_art, nextBtn, prevBtn, backBtn, shuffleBtn, repeatBtn;
@@ -68,7 +69,6 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     int position = -1;
     static ArrayList<MusicFiles> listSongs = new ArrayList<>();
     static Uri uri;
-//    static MediaPlayer mediaPlayer;
     private final Handler handler = new Handler(Looper.getMainLooper());
     MusicService musicService;
     static MusicService passMusicService;
@@ -89,6 +89,12 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     
     // Original queue order for restoring when shuffle is disabled
     private ArrayList<MusicFiles> originalQueueOrder = null;
+    
+    // Flag to track if this is a recreation (rotation) vs fresh start
+    private boolean isRecreation = false;
+    // Saved state from configuration change
+    private int savedSeekPosition = -1;
+    private boolean savedIsPlaying = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,6 +111,30 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
             return WindowInsetsCompat.CONSUMED;
         });
         
+        // Check if this is a recreation from configuration change (e.g., rotation)
+        if (savedInstanceState != null) {
+            isRecreation = true;
+            position = savedInstanceState.getInt(STATE_POSITION, -1);
+            shuffleBoolean = savedInstanceState.getBoolean(STATE_SHUFFLE, false);
+            repeatBoolean = savedInstanceState.getBoolean(STATE_REPEAT, false);
+            savedIsPlaying = savedInstanceState.getBoolean(STATE_IS_PLAYING, false);
+            savedSeekPosition = savedInstanceState.getInt(STATE_SEEK_POSITION, -1);
+            
+            // Restore listSongs from the service if available, otherwise load from database
+            if (passMusicService != null && passMusicService.musicFiles != null && !passMusicService.musicFiles.isEmpty()) {
+                listSongs = passMusicService.musicFiles;
+            } else if (listSongs == null || listSongs.isEmpty()) {
+                // Load from database as fallback
+                QueueDatabase queueDb = QueueDatabase.getInstance(this);
+                listSongs = queueDb.loadQueue();
+            }
+            
+            // Restore URI
+            if (position >= 0 && listSongs != null && position < listSongs.size()) {
+                uri = Uri.parse(listSongs.get(position).getPath());
+            }
+        }
+        
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getBaseContext());
         SharedPreferences.Editor editor = prefs.edit();
         editor.putBoolean("playerActivitypass", true);
@@ -116,7 +146,11 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         
         initViews();
         setupQueueBottomSheet();
-        getIntenMethod();
+        
+        // Only process intent if this is NOT a recreation
+        if (!isRecreation) {
+            getIntenMethod();
+        }
         
         // Update shuffle/repeat button states
         updateShuffleButton();
@@ -149,44 +183,30 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                 if (musicService != null) {
                     int mCurrentPosition = musicService.getCurrentPosition() / 1000;
                     seekBar.setProgress(mCurrentPosition);
-                    duration_played.setText(formattedTime(mCurrentPosition));
+                    duration_played.setText(TimeFormatter.formatTime(mCurrentPosition));
                 }
                 handler.postDelayed(this, 1000);
             }
         };
         handler.post(seekBarUpdateRunnable);
         
-        shuffleBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                shuffleBoolean = !shuffleBoolean;
-                updateShuffleButton();
-                
-                // If shuffle is turned on, shuffle the remaining queue
-                if (shuffleBoolean && listSongs != null && listSongs.size() > 1) {
-                    shuffleQueue();
-                } else if (!shuffleBoolean) {
-                    // Shuffle turned off - restore original queue order
-                    restoreOriginalQueue();
-                }
+        shuffleBtn.setOnClickListener(v -> {
+            shuffleBoolean = !shuffleBoolean;
+            updateShuffleButton();
+            
+            // If shuffle is turned on, shuffle the remaining queue
+            if (shuffleBoolean && listSongs != null && listSongs.size() > 1) {
+                shuffleQueue();
+            } else if (!shuffleBoolean) {
+                // Shuffle turned off - restore original queue order
+                restoreOriginalQueue();
             }
         });
-        repeatBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                repeatBoolean = !repeatBoolean;
-                updateRepeatButton();
-            }
+        repeatBtn.setOnClickListener(v -> {
+            repeatBoolean = !repeatBoolean;
+            updateRepeatButton();
         });
-        backBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-//                Intent intent_D = new Intent(getApplicationContext(), MainActivity.class);
-//                intent_D.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-//                startActivity(intent_D);
-                finish();
-            }
-        });
+        backBtn.setOnClickListener(v -> finish());
 
         // Register back press callback to replace deprecated onBackPressed()
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -195,6 +215,24 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                 finish();
             }
         });
+    }
+    
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // Save current playback state for restoration after configuration change
+        outState.putInt(STATE_POSITION, position);
+        outState.putBoolean(STATE_SHUFFLE, shuffleBoolean);
+        outState.putBoolean(STATE_REPEAT, repeatBoolean);
+        
+        // Save playback state from service
+        if (musicService != null) {
+            outState.putBoolean(STATE_IS_PLAYING, musicService.isPlaying());
+            outState.putInt(STATE_SEEK_POSITION, musicService.getCurrentPosition());
+        } else if (passMusicService != null) {
+            outState.putBoolean(STATE_IS_PLAYING, passMusicService.isPlaying());
+            outState.putInt(STATE_SEEK_POSITION, passMusicService.getCurrentPosition());
+        }
     }
 
     @Override
@@ -310,62 +348,30 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         
         // Update now playing fragment
         updateNowPlayingFragment();
-        
-        // Update queue UI to show correct next song
         updateQueueUI();
     }
     
-    /**
-     * Update the NowPlayingFragmentBottom with current song info.
-     */
     private void updateNowPlayingFragment() {
-        if (listSongs == null || position < 0 || position >= listSongs.size()) {
-            return;
-        }
-        
-        MusicFiles currentSong = listSongs.get(position);
-        
-        byte[] art = artist_image;
-        if (art != null && NowPlayingFragmentBottom.albumArt != null) {
-            if (isValidContextForGlide(getBaseContext())) {
-                Glide.with(getBaseContext()).load(art)
-                        .into(NowPlayingFragmentBottom.albumArt);
-            }
-        }
-        
-        if (NowPlayingFragmentBottom.songName != null) {
-            NowPlayingFragmentBottom.songName.setText(currentSong.getTitle());
-        }
-        if (NowPlayingFragmentBottom.artist != null) {
-            NowPlayingFragmentBottom.artist.setText(currentSong.getArtist());
-        }
-        if (NowPlayingFragmentBottom.playPauseBtn != null) {
-            NowPlayingFragmentBottom.playPauseBtn.setImageResource(
-                    musicService != null && musicService.isPlaying() 
-                            ? R.drawable.ic_pause : R.drawable.ic_play);
-        }
-    }
-
-    private int getRandom(int i) {
-        Random random = new Random();
-        return random.nextInt(i + 1);
+        if (listSongs == null || position < 0 || position >= listSongs.size()) return;
+        MusicFiles s = listSongs.get(position);
+        if (artist_image != null && NowPlayingFragmentBottom.albumArt != null && isValidContextForGlide(getBaseContext()))
+            Glide.with(getBaseContext()).load(artist_image).into(NowPlayingFragmentBottom.albumArt);
+        if (NowPlayingFragmentBottom.songName != null) NowPlayingFragmentBottom.songName.setText(s.getTitle());
+        if (NowPlayingFragmentBottom.artist != null) NowPlayingFragmentBottom.artist.setText(s.getArtist());
+        updateMiniPlayerIcon(musicService != null && musicService.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
     }
 
     public void playPauseBtnClicked() {
         if (musicService.isPlaying()){
             playPauseBtn.setImageResource(R.drawable.ic_play);
             musicService.showNotification(R.drawable.ic_play);
-            if (NowPlayingFragmentBottom.playPauseBtn != null) {
-                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
-            }
+            updateMiniPlayerIcon(R.drawable.ic_play);
             musicService.pause();
         } else {
             musicService.start();
             playPauseBtn.setImageResource(R.drawable.ic_pause);
             musicService.showNotification(R.drawable.ic_pause);
-            if (NowPlayingFragmentBottom.playPauseBtn != null) {
-                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
-            }
+            updateMiniPlayerIcon(R.drawable.ic_pause);
         }
         
         // Update shuffle/repeat button states
@@ -373,29 +379,6 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         updateRepeatButton();
         
         passMusicService = musicService;
-    }
-
-//    public void PassingBottomFrag(){
-//        uri = Uri.parse(listSongs.get(position).getPath());
-//        metaData(uri);
-//        byte[] artPhoto = artist_image;
-//        if (artPhoto != null){
-//            Glide.with(getBaseContext()).load(artPhoto)
-//                    .into(NowPlayingFragmentBottom.albumArt);
-//        }else{
-////                Toast.makeText(musicService, "Art is NULL!!!", Toast.LENGTH_SHORT).show();
-//        }
-//        NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-//        NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
-//    }
-
-    /**
-     * Format seconds into mm:ss format.
-     * @deprecated Use {@link TimeFormatter#formatTime(int)} instead.
-     */
-    @Deprecated
-    private String formattedTime(int mCurrentPosition) {
-        return TimeFormatter.formatTime(mCurrentPosition);
     }
 
     private void getIntenMethod() {
@@ -430,7 +413,9 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                 updateQueueUI();
             }
             
-            NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+            if (NowPlayingFragmentBottom.playPauseBtn != null) {
+                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+            }
             playPauseBtn.setImageResource(R.drawable.ic_pause);
             uri = Uri.parse(listSongs.get(position).getPath());
             
@@ -472,13 +457,9 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
             
             uri = Uri.parse(listSongs.get(position).getPath());
             // Update play/pause button state
-            if (passMusicService != null && passMusicService.isPlaying()) {
-                playPauseBtn.setImageResource(R.drawable.ic_pause);
-                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
-            } else {
-                playPauseBtn.setImageResource(R.drawable.ic_play);
-                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
-            }
+            int icon = (passMusicService != null && passMusicService.isPlaying()) ? R.drawable.ic_pause : R.drawable.ic_play;
+            playPauseBtn.setImageResource(icon);
+            updateMiniPlayerIcon(icon);
             // Don't restart the service, just bind to it
             Intent intent = new Intent(this, MusicService.class);
             bindService(intent, this, BIND_AUTO_CREATE);
@@ -514,7 +495,7 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         // Clear original queue order when new album/playlist is loaded
         originalQueueOrder = null;
         
-        NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+        updateMiniPlayerIcon(R.drawable.ic_pause);
         playPauseBtn.setImageResource(R.drawable.ic_pause);
         uri = Uri.parse(listSongs.get(position).getPath());
 
@@ -881,18 +862,10 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
             musicService.OnCompleted();
             musicService.showNotification(R.drawable.ic_pause);
             playPauseBtn.setImageResource(R.drawable.ic_pause);
-            NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+            updateMiniPlayerIcon(R.drawable.ic_pause);
             musicService.start();
             passMusicService = musicService;
-            
-            // Update now playing fragment
-            byte[] art = artist_image;
-            if (art != null) {
-                Glide.with(getBaseContext()).load(art)
-                        .into(NowPlayingFragmentBottom.albumArt);
-            }
-            NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-            NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
+            updateNowPlayingFragment();
             
             // Save to database and update UI
             queueDatabase.saveCurrentIndex(position);
@@ -958,7 +931,7 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
     private void metaData(Uri uri){
         // Get duration from stored metadata (fast, OK on main thread)
         int durationTotal = Integer.parseInt(listSongs.get(position).getDuration()) / 1000;
-        duration_total.setText(formattedTime(durationTotal));
+        duration_total.setText(TimeFormatter.formatTime(durationTotal));
         
         // Load art asynchronously to avoid blocking the UI thread
         final String uriString = uri.toString();
@@ -1024,37 +997,18 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                                 new int[]{0x44444444, swatch.getRgb()});
                         mContainer.setBackground(mContainer_gradientDrawableBg);
                         
-                        // Now Playing bar uses SOLID color (Material You requirement) - no gradient
-                        int nowPlayingBgColor = getResources().getColor(R.color.now_playing_bg, getTheme());
-                        NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(nowPlayingBgColor);
-
-                        // Use high-contrast white text with shadow (defined in XML) for legibility on any background
-                        int textPrimary = Color.WHITE;
-                        int textSecondary = Color.parseColor("#E0E0E0");  // Light gray for secondary
-                        int textTertiary = Color.parseColor("#BDBDBD");   // Medium gray for tertiary
-                        
-                        song_name.setTextColor(textPrimary);
-                        artist_name.setTextColor(textSecondary);
-                        album_name.setTextColor(textTertiary);
-                        textNowplaying.setTextColor(textPrimary);
-                        
-                        // Now Playing bar text uses fixed readable colors (dark theme)
-                        int nowPlayingTextPrimary = getResources().getColor(R.color.text_primary_dark, getTheme());
-                        int nowPlayingTextSecondary = getResources().getColor(R.color.text_secondary_dark, getTheme());
-                        NowPlayingFragmentBottom.songName.setTextColor(nowPlayingTextPrimary);
-                        NowPlayingFragmentBottom.artist.setTextColor(nowPlayingTextSecondary);
-                        
-                        if (isColorDark(swatch.getRgb())){
-                            int ColorValue = Color.parseColor("#FFFFFF");
-                            ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
-                            ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
-                        }else{
-                            int ColorValue = Color.parseColor("#1A1A1A");
-                            ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(ColorValue));
-                            ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(ColorValue));
+                        if (NowPlayingFragmentBottom.bottom_bac_frag != null) {
+                            NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(getResources().getColor(R.color.now_playing_bg, getTheme()));
                         }
-                        playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(swatch.getRgb()));
-                        NowPlayingFragmentBottom.playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(swatch.getRgb()));
+                        song_name.setTextColor(Color.WHITE);
+                        artist_name.setTextColor(Color.parseColor("#E0E0E0"));
+                        album_name.setTextColor(Color.parseColor("#BDBDBD"));
+                        textNowplaying.setTextColor(Color.WHITE);
+                        if (NowPlayingFragmentBottom.songName != null) NowPlayingFragmentBottom.songName.setTextColor(getResources().getColor(R.color.text_primary_dark, getTheme()));
+                        if (NowPlayingFragmentBottom.artist != null) NowPlayingFragmentBottom.artist.setTextColor(getResources().getColor(R.color.text_secondary_dark, getTheme()));
+                        
+                        int tint = isColorDark(swatch.getRgb()) ? Color.WHITE : Color.parseColor("#1A1A1A");
+                        setPlayBtnTint(tint, swatch.getRgb());
 
                     }
                     else {
@@ -1073,44 +1027,32 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                         .load(R.drawable.musicicon)
                         .into(cover_art);
             }
-            // No album art - use default dark theme colors
             setDefaultColors();
         }
     }
     
-    /**
-     * Sets default dark theme colors for player and now playing bar.
-     * Used when no album art is available or palette extraction fails.
-     */
+    private void setPlayBtnTint(int tint, int bg) {
+        ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(tint));
+        playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(bg));
+        if (NowPlayingFragmentBottom.playPauseBtn != null) {
+            ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(tint));
+            NowPlayingFragmentBottom.playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(bg));
+        }
+    }
+    
     private void setDefaultColors() {
-        ImageView gradient = findViewById(R.id.imageViewGredient);
-        ConstraintLayout mContainer = findViewById(R.id.mContainer);
-        gradient.setImageResource(R.drawable.gredient_bg);
-        mContainer.setBackgroundColor(getResources().getColor(R.color.background_dark, getTheme()));
-        
-        // Now Playing bar uses solid color (Material You)
-        int nowPlayingBgColor = getResources().getColor(R.color.now_playing_bg, getTheme());
-        NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(nowPlayingBgColor);
-        
-        // Player text - readable on dark background
-        int textPrimary = getResources().getColor(R.color.text_primary_dark, getTheme());
-        int textSecondary = getResources().getColor(R.color.text_secondary_dark, getTheme());
-        int textTertiary = getResources().getColor(R.color.text_tertiary_dark, getTheme());
-        
-        song_name.setTextColor(textPrimary);
-        artist_name.setTextColor(textSecondary);
-        album_name.setTextColor(textTertiary);
-        
-        // Now Playing bar text - always readable
-        NowPlayingFragmentBottom.songName.setTextColor(textPrimary);
-        NowPlayingFragmentBottom.artist.setTextColor(textSecondary);
-        
-        // Default accent color for FAB
-        int accentColor = getResources().getColor(R.color.accent_purple, getTheme());
-        playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(accentColor));
-        NowPlayingFragmentBottom.playPauseBtn.setBackgroundTintList(ColorStateList.valueOf(accentColor));
-        ImageViewCompat.setImageTintList(playPauseBtn, ColorStateList.valueOf(Color.WHITE));
-        ImageViewCompat.setImageTintList(NowPlayingFragmentBottom.playPauseBtn, ColorStateList.valueOf(Color.WHITE));
+        ((ImageView)findViewById(R.id.imageViewGredient)).setImageResource(R.drawable.gredient_bg);
+        findViewById(R.id.mContainer).setBackgroundColor(getResources().getColor(R.color.background_dark, getTheme()));
+        if (NowPlayingFragmentBottom.bottom_bac_frag != null)
+            NowPlayingFragmentBottom.bottom_bac_frag.setBackgroundColor(getResources().getColor(R.color.now_playing_bg, getTheme()));
+        int tp = getResources().getColor(R.color.text_primary_dark, getTheme());
+        int ts = getResources().getColor(R.color.text_secondary_dark, getTheme());
+        song_name.setTextColor(tp);
+        artist_name.setTextColor(ts);
+        album_name.setTextColor(getResources().getColor(R.color.text_tertiary_dark, getTheme()));
+        if (NowPlayingFragmentBottom.songName != null) NowPlayingFragmentBottom.songName.setTextColor(tp);
+        if (NowPlayingFragmentBottom.artist != null) NowPlayingFragmentBottom.artist.setTextColor(ts);
+        setPlayBtnTint(Color.WHITE, getResources().getColor(R.color.accent_purple, getTheme()));
     }
 
     public void ImageAnimation(Context context, ImageView imageView, Bitmap bitmap)
@@ -1164,6 +1106,13 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         return true;
     }
 
+    /** Updates mini player play/pause icon safely. */
+    private void updateMiniPlayerIcon(int resId) {
+        if (NowPlayingFragmentBottom.playPauseBtn != null) {
+            NowPlayingFragmentBottom.playPauseBtn.setImageResource(resId);
+        }
+    }
+
     @Override
     public void onServiceConnected(ComponentName name, IBinder service)  {
         MusicService.MyBinder myBinder = (MusicService.MyBinder) service;
@@ -1192,25 +1141,43 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
             artist_name.setText(listSongs.get(position).getArtist());
             album_name.setText(listSongs.get(position).getAlbum());
             
-            // Update NowPlayingFragmentBottom
-            NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-            NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
+            // Update NowPlayingFragmentBottom safely (may be null during rotation)
+            if (NowPlayingFragmentBottom.songName != null) {
+                NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
+            }
+            if (NowPlayingFragmentBottom.artist != null) {
+                NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
+            }
             
             // Update play/pause button based on actual playback state
             if (musicService.isPlaying()) {
                 playPauseBtn.setImageResource(R.drawable.ic_pause);
-                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+                if (NowPlayingFragmentBottom.playPauseBtn != null) {
+                    NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_pause);
+                }
                 musicService.showNotification(R.drawable.ic_pause);
             } else {
                 playPauseBtn.setImageResource(R.drawable.ic_play);
-                NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
+                if (NowPlayingFragmentBottom.playPauseBtn != null) {
+                    NowPlayingFragmentBottom.playPauseBtn.setImageResource(R.drawable.ic_play);
+                }
                 musicService.showNotification(R.drawable.ic_play);
             }
             
             musicService.OnCompleted();
+            
+            // Update queue UI for recreation
+            if (isRecreation && queueAdapter != null) {
+                queueAdapter.updateQueue(listSongs);
+                queueAdapter.setCurrentPlayingIndex(position);
+                updateQueueUI();
+            }
         }
         
         passMusicService = musicService;
+        
+        // Reset recreation flag after handling
+        isRecreation = false;
     }
 
     @Override

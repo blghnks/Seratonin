@@ -6,7 +6,7 @@
     android:layout_height="wrap_content"
     android:layout_margin="@dimen/spacing_sm"
     android:foreground="?attr/selectableItemBackground"
-    app:cardBackgroundColor="@color/card_background"
+    app:cardBackgroundColor="@color/card_background_dark"
     app:cardCornerRadius="@dimen/album_card_radius"
     app:cardElevation="@dimen/album_card_elevation">
 
