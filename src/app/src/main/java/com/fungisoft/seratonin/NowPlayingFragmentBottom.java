@@ -13,6 +13,8 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import java.util.ArrayList;
+
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.fragment.app.Fragment;
 
@@ -73,7 +75,12 @@ public class NowPlayingFragmentBottom extends Fragment implements ServiceConnect
         playPauseBtn = view.findViewById(R.id.play_pause_miniPlayer);
         nextBtn.setOnClickListener(v -> handleSkipButton(true));
         prevBtn.setOnClickListener(v -> handleSkipButton(false));
-        playPauseBtn.setOnClickListener(v -> musicService.playPauseBtnClicked());
+        playPauseBtn.setOnClickListener(v -> {
+            if (musicService != null && musicService.musicFiles != null 
+                    && !musicService.musicFiles.isEmpty() && musicService.position >= 0) {
+                musicService.playPauseBtnClicked();
+            }
+        });
 
         bottom_bac_frag.setOnClickListener(v -> {
             Intent playerIntent = new Intent(getContext(), PlayerActivity.class);
@@ -94,7 +101,11 @@ public class NowPlayingFragmentBottom extends Fragment implements ServiceConnect
      * @param isNext true for next, false for previous
      */
     private void handleSkipButton(boolean isNext) {
-        if (musicService == null) return;
+        // Ensure service has valid playable state before allowing skip
+        if (musicService == null || musicService.musicFiles == null 
+                || musicService.musicFiles.isEmpty() || musicService.position < 0) {
+            return;
+        }
         
         if (isNext) {
             musicService.nextBtnClicked();
@@ -256,6 +267,48 @@ public class NowPlayingFragmentBottom extends Fragment implements ServiceConnect
     public void onServiceConnected(ComponentName name, IBinder service) {
         MusicService.MyBinder binder = (MusicService.MyBinder) service;
         musicService = binder.getService();
+        
+        // Restore playable state from database if service has no queue (cold start)
+        if ((musicService.musicFiles == null || musicService.musicFiles.isEmpty()) 
+                && getContext() != null) {
+            QueueDatabase queueDb = QueueDatabase.getInstance(getContext());
+            ArrayList<MusicFiles> restoredQueue = queueDb.loadQueue();
+            
+            if (restoredQueue != null && !restoredQueue.isEmpty()) {
+                int restoredIndex = queueDb.getCurrentIndex();
+                // Validate index bounds
+                if (restoredIndex < 0 || restoredIndex >= restoredQueue.size()) {
+                    restoredIndex = 0;
+                }
+                
+                // Set service state
+                musicService.musicFiles = restoredQueue;
+                musicService.position = restoredIndex;
+                
+                // Prepare media player (does not auto-play)
+                musicService.createMediaPlayer(restoredIndex);
+                
+                // Sync static references for PlayerActivity consistency
+                PlayerActivity.listSongs = restoredQueue;
+                
+                // Update play button to show play icon (paused state)
+                if (playPauseBtn != null) {
+                    playPauseBtn.setImageResource(R.drawable.ic_play);
+                }
+            } else {
+                // No queue to restore - hide mini player
+                SHOW_MINI_PLAYER = false;
+                if (bottom_bac_frag != null) {
+                    bottom_bac_frag.setVisibility(View.GONE);
+                }
+            }
+        } else if (musicService.musicFiles != null && !musicService.musicFiles.isEmpty()) {
+            // Service already has playable state - update play/pause icon
+            if (playPauseBtn != null) {
+                playPauseBtn.setImageResource(
+                    musicService.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
+            }
+        }
     }
 
     @Override

@@ -1052,7 +1052,17 @@ public class MainActivity extends AppCompatActivity implements SearchView.OnQuer
         String path = preferences.getString(MUSIC_FILE, null);
         String artist = preferences.getString(ARTIST_NAME, null);
         String  song_name = preferences.getString(SONG_NAME, null);
+        
+        // Only show mini player if we have both display metadata AND a valid queue
+        // This prevents showing a song that cannot be played
+        boolean hasQueue = false;
         if (path != null) {
+            // Check if queue exists in database (quick check, not full load)
+            QueueDatabase queueDb = QueueDatabase.getInstance(this);
+            hasQueue = queueDb.hasQueue();
+        }
+        
+        if (path != null && hasQueue) {
             SHOW_MINI_PLAYER = true;
             PATH_TO_FRAG = path;
             ARTIST_TO_FRAG = artist;

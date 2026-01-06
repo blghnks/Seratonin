@@ -4,8 +4,6 @@ import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
 import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
@@ -17,9 +15,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Centralized helper for album art retrieval.
@@ -46,22 +42,8 @@ public class AlbumArtHelper {
             "front", "cover", "folder", "albumart"
     };
 
-    /**
-     * Supported image extensions in priority order.
-     */
+    /** Supported image extensions in priority order. */
     private static final String[] IMAGE_EXTENSIONS = {"png", "jpg", "jpeg"};
-
-    /**
-     * Set of valid artwork filenames (lowercase) for quick lookup.
-     */
-    private static final Set<String> VALID_ART_FILENAMES = new HashSet<>();
-    static {
-        for (String baseName : EXTERNAL_ART_BASE_NAMES) {
-            for (String ext : IMAGE_EXTENSIONS) {
-                VALID_ART_FILENAMES.add(baseName + "." + ext);
-            }
-        }
-    }
 
     /**
      * Get album art for a single song/track with caching support.
@@ -249,19 +231,12 @@ public class AlbumArtHelper {
         }
 
         // Try direct file access first - this works with MANAGE_EXTERNAL_STORAGE permission
-        // This is the primary method because album art files are often excluded from MediaStore
         byte[] result = getExternalAlbumArtViaDirectRead(musicFilePath);
         if (result != null) {
             return result;
         }
 
-        // Fallback: try file system access with exists() check (may work on some paths)
-        result = getExternalAlbumArtViaFileSystem(musicFilePath);
-        if (result != null) {
-            return result;
-        }
-
-        // Last resort: try MediaStore (in case the files ARE indexed for some reason)
+        // Fallback: try MediaStore (in case the files ARE indexed for some reason)
         if (context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             return getExternalAlbumArtViaMediaStore(context, musicFilePath);
         }
@@ -407,14 +382,14 @@ public class AlbumArtHelper {
 
         // Strategy 1: Try RELATIVE_PATH (most precise)
         if (relativePath != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            byte[] result = queryMediaStoreByRelativePath(context, relativePath);
+            byte[] result = queryMediaStoreByColumn(context, MediaStore.Images.Media.RELATIVE_PATH, relativePath);
             if (result != null) {
                 return result;
             }
         }
 
         // Strategy 2: Try BUCKET_DISPLAY_NAME (folder name)
-        byte[] result = queryMediaStoreByBucketName(context, folderName);
+        byte[] result = queryMediaStoreByColumn(context, MediaStore.Images.Media.BUCKET_DISPLAY_NAME, folderName);
         if (result != null) {
             return result;
         }
@@ -424,50 +399,19 @@ public class AlbumArtHelper {
     }
 
     /**
-     * Query MediaStore by RELATIVE_PATH.
+     * Generic MediaStore query for album art with configurable column selection.
      */
-    private static byte[] queryMediaStoreByRelativePath(Context context, String relativePath) {
-        ContentResolver resolver = context.getContentResolver();
-        Uri imagesUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-
-        String[] projection = {
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME
-        };
-
-        String selection = MediaStore.Images.Media.RELATIVE_PATH + " = ?";
-        String[] selectionArgs = new String[]{ relativePath };
-
-        try (Cursor cursor = resolver.query(imagesUri, projection, selection, selectionArgs, null)) {
-            return findArtworkFromCursor(context, cursor, imagesUri);
+    private static byte[] queryMediaStoreByColumn(Context context, String column, String value) {
+        try (Cursor cursor = context.getContentResolver().query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                new String[]{ MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME },
+                column + " = ?",
+                new String[]{ value },
+                null)) {
+            return findArtworkFromCursor(context, cursor, MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
         } catch (Exception e) {
-            Log.e(TAG, "Error querying MediaStore by RELATIVE_PATH", e);
+            Log.e(TAG, "Error querying MediaStore by " + column, e);
         }
-
-        return null;
-    }
-
-    /**
-     * Query MediaStore by BUCKET_DISPLAY_NAME.
-     */
-    private static byte[] queryMediaStoreByBucketName(Context context, String folderName) {
-        ContentResolver resolver = context.getContentResolver();
-        Uri imagesUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-
-        String[] projection = {
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME
-        };
-
-        String selection = MediaStore.Images.Media.BUCKET_DISPLAY_NAME + " = ?";
-        String[] selectionArgs = new String[]{ folderName };
-
-        try (Cursor cursor = resolver.query(imagesUri, projection, selection, selectionArgs, null)) {
-            return findArtworkFromCursor(context, cursor, imagesUri);
-        } catch (Exception e) {
-            Log.e(TAG, "Error querying MediaStore by BUCKET_DISPLAY_NAME", e);
-        }
-
         return null;
     }
 
@@ -642,75 +586,10 @@ public class AlbumArtHelper {
      * @return The ID of the best matching artwork, or null if none found
      */
     private static Long findBestArtwork(Map<String, Long> imageFiles) {
-        // Check in priority order: front, cover, folder, albumart
-        // For each base name, check png, jpg, jpeg
         for (String baseName : EXTERNAL_ART_BASE_NAMES) {
             for (String ext : IMAGE_EXTENSIONS) {
-                String filename = baseName + "." + ext;
-                Long id = imageFiles.get(filename);
-                if (id != null) {
-                    return id;
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Find and load external album art using direct file system access.
-     * Only works on Android 12 and below.
-     *
-     * @param musicFilePath The absolute path to the music file
-     * @return byte[] of the image data, or null if not found
-     */
-    private static byte[] getExternalAlbumArtViaFileSystem(String musicFilePath) {
-        try {
-            File musicFile = new File(musicFilePath);
-            File parentDir = musicFile.getParentFile();
-
-            if (parentDir == null || !parentDir.exists() || !parentDir.isDirectory()) {
-                return null;
-            }
-
-            // Try each expected filename in priority order
-            for (String baseName : EXTERNAL_ART_BASE_NAMES) {
-                for (String ext : IMAGE_EXTENSIONS) {
-                    byte[] data = tryLoadArtFile(parentDir, baseName + "." + ext);
-                    if (data != null) {
-                        return data;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error searching for external art via file system", e);
-        }
-
-        return null;
-    }
-
-    /**
-     * Try to load an art file with case-insensitive matching.
-     *
-     * @param parentDir The directory containing the art file
-     * @param filename The expected filename (lowercase)
-     * @return byte[] of the image data, or null if not found
-     */
-    private static byte[] tryLoadArtFile(File parentDir, String filename) {
-        // Try common case variations
-        String[] variations = {
-                filename,                                           // front.jpg
-                filename.toUpperCase(),                             // FRONT.JPG
-                Character.toUpperCase(filename.charAt(0)) +         // Front.jpg
-                        filename.substring(1)
-        };
-
-        for (String variant : variations) {
-            File artFile = new File(parentDir, variant);
-            if (artFile.exists() && artFile.isFile() && artFile.canRead()) {
-                byte[] data = readFileToBytesDirectly(artFile);
-                if (data != null) {
-                    return data;
-                }
+                Long id = imageFiles.get(baseName + "." + ext);
+                if (id != null) return id;
             }
         }
         return null;
@@ -718,16 +597,10 @@ public class AlbumArtHelper {
 
     /**
      * Load image data from a content URI.
-     *
-     * @param context Application context
-     * @param uri The content URI of the image
-     * @return byte[] of the image data, or null on error
      */
     private static byte[] loadImageFromUri(Context context, Uri uri) {
         try (InputStream is = context.getContentResolver().openInputStream(uri)) {
-            if (is == null) {
-                return null;
-            }
+            if (is == null) return null;
             java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
             byte[] data = new byte[8192];
             int bytesRead;

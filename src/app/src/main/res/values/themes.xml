@@ -34,24 +34,4 @@
         <item name="tabRippleColor">@color/accent_purple_dim</item>
         <item name="tabBackground">@android:color/transparent</item>
     </style>
-    
-    <!-- Bottom Sheet Dialog Theme -->
-    <style name="BottomSheetDialogTheme" parent="Theme.MaterialComponents.Light.BottomSheetDialog">
-        <item name="bottomSheetStyle">@style/BottomSheetStyle</item>
-        <item name="android:windowIsFloating">false</item>
-        <item name="android:windowSoftInputMode">adjustResize</item>
-    </style>
-    
-    <style name="BottomSheetStyle" parent="Widget.MaterialComponents.BottomSheet.Modal">
-        <item name="android:background">@color/surface_elevated</item>
-        <item name="shapeAppearanceOverlay">@style/BottomSheetShapeAppearance</item>
-    </style>
-    
-    <style name="BottomSheetShapeAppearance" parent="">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSizeTopLeft">16dp</item>
-        <item name="cornerSizeTopRight">16dp</item>
-        <item name="cornerSizeBottomLeft">0dp</item>
-        <item name="cornerSizeBottomRight">0dp</item>
-    </style>
 </resources>

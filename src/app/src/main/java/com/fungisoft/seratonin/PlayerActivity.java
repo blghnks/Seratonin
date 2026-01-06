@@ -333,9 +333,7 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         metaData(uri);
         
         // Update player UI
-        song_name.setText(listSongs.get(position).getTitle());
-        artist_name.setText(listSongs.get(position).getArtist());
-        album_name.setText(listSongs.get(position).getAlbum());
+        updateSongInfoUI();
         seekBar.setMax(musicService.getDuration() / 1000);
         
         musicService.OnCompleted();
@@ -364,6 +362,18 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         if (NowPlayingFragmentBottom.songName != null) NowPlayingFragmentBottom.songName.setText(s.getTitle());
         if (NowPlayingFragmentBottom.artist != null) NowPlayingFragmentBottom.artist.setText(s.getArtist());
         updateMiniPlayerIcon(musicService != null && musicService.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
+    }
+    
+    /**
+     * Update song info TextViews with current song's metadata.
+     * Called from multiple places when the current song changes.
+     */
+    private void updateSongInfoUI() {
+        if (listSongs == null || position < 0 || position >= listSongs.size()) return;
+        MusicFiles song = listSongs.get(position);
+        song_name.setText(song.getTitle());
+        artist_name.setText(song.getArtist());
+        album_name.setText(song.getAlbum());
     }
 
     public void playPauseBtnClicked() {
@@ -442,6 +452,9 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
                     && passMusicService.position < passMusicService.musicFiles.size()) {
                 position = passMusicService.position;
                 listSongs = passMusicService.musicFiles;
+            } else if (listSongs != null && !listSongs.isEmpty() && servicePosition >= 0 && servicePosition < listSongs.size()) {
+                // Use pre-restored listSongs from cold start (set by NowPlayingFragmentBottom)
+                position = servicePosition;
             } else if (mFiles != null && servicePosition >= 0 && servicePosition < mFiles.size()) {
                 // Fallback to mFiles with the passed position
                 position = servicePosition;
@@ -855,9 +868,7 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
             uri = Uri.parse(listSongs.get(position).getPath());
             musicService.createMediaPlayer(position);
             metaData(uri);
-            song_name.setText(listSongs.get(position).getTitle());
-            artist_name.setText(listSongs.get(position).getArtist());
-            album_name.setText(listSongs.get(position).getAlbum());
+            updateSongInfoUI();
             seekBar.setMax(musicService.getDuration() / 1000);
             
             musicService.OnCompleted();
@@ -1138,17 +1149,8 @@ public class PlayerActivity extends AppCompatActivity implements ActionPlaying, 
         // Update UI with current song info only if we have valid data
         if (listSongs != null && position >= 0 && position < listSongs.size()) {
             metaData(uri);
-            song_name.setText(listSongs.get(position).getTitle());
-            artist_name.setText(listSongs.get(position).getArtist());
-            album_name.setText(listSongs.get(position).getAlbum());
-            
-            // Update NowPlayingFragmentBottom safely (may be null during rotation)
-            if (NowPlayingFragmentBottom.songName != null) {
-                NowPlayingFragmentBottom.songName.setText(listSongs.get(position).getTitle());
-            }
-            if (NowPlayingFragmentBottom.artist != null) {
-                NowPlayingFragmentBottom.artist.setText(listSongs.get(position).getArtist());
-            }
+            updateSongInfoUI();
+            updateNowPlayingFragment();
             
             // Update play/pause button based on actual playback state
             if (musicService.isPlaying()) {

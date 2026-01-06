@@ -395,71 +395,19 @@ public class QueueDatabase extends SQLiteOpenHelper {
             return null;
         }
         
-        ArrayList<MusicFiles> importedSongs = new ArrayList<>();
-        BufferedReader reader = null;
-        
         try {
-            reader = new BufferedReader(new FileReader(m3uFile));
-            String line;
-            String extInfo = null;
-            
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                
-                // Skip empty lines
-                if (line.isEmpty()) continue;
-                
-                // Parse EXTINF line for metadata
-                if (line.startsWith("#EXTINF:")) {
-                    extInfo = line;
-                    continue;
-                }
-                
-                // Skip other comment lines
-                if (line.startsWith("#")) continue;
-                
-                // This is a file path - resolve it
-                String filePath = resolveM3UPath(line, m3uFile.getParent());
-                if (filePath == null) continue;
-                
-                File audioFile = new File(filePath);
-                if (!audioFile.exists()) {
-                    Log.w(TAG, "Audio file not found: " + filePath);
-                    continue;
-                }
-                
-                // Create MusicFiles object from the file
-                MusicFiles song = createMusicFileFromPath(filePath, extInfo);
-                if (song != null) {
-                    importedSongs.add(song);
-                }
-                
-                extInfo = null; // Reset for next track
-            }
-            
-            Log.d(TAG, "Imported " + importedSongs.size() + " songs from M3U: " + m3uPath);
-            return importedSongs;
-            
+            BufferedReader reader = new BufferedReader(new FileReader(m3uFile));
+            ArrayList<MusicFiles> result = parseM3UReader(reader, m3uFile.getParent(), "M3U: " + m3uPath);
+            reader.close();
+            return result;
         } catch (IOException e) {
             Log.e(TAG, "Error reading M3U file", e);
             return null;
-        } finally {
-            if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException e) {
-                    Log.e(TAG, "Error closing reader", e);
-                }
-            }
         }
     }
     
     /**
      * Import M3U playlist from a content URI (for SAF/picker).
-     * @param uri The content URI of the M3U file
-     * @param context Context for content resolver
-     * @param baseDir Optional base directory for resolving relative paths
-     * @return The list of imported songs, or null if import failed
      */
     public ArrayList<MusicFiles> importFromM3UUri(Uri uri, Context context, String baseDir) {
         if (uri == null) {
@@ -467,69 +415,58 @@ public class QueueDatabase extends SQLiteOpenHelper {
             return null;
         }
         
-        ArrayList<MusicFiles> importedSongs = new ArrayList<>();
-        BufferedReader reader = null;
-        
         try {
             InputStream inputStream = context.getContentResolver().openInputStream(uri);
             if (inputStream == null) {
                 Log.e(TAG, "Could not open input stream for URI: " + uri);
                 return null;
             }
-            
-            reader = new BufferedReader(new InputStreamReader(inputStream));
-            String line;
-            String extInfo = null;
-            
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                
-                // Skip empty lines
-                if (line.isEmpty()) continue;
-                
-                // Parse EXTINF line for metadata
-                if (line.startsWith("#EXTINF:")) {
-                    extInfo = line;
-                    continue;
-                }
-                
-                // Skip other comment lines
-                if (line.startsWith("#")) continue;
-                
-                // This is a file path - resolve it
-                String filePath = resolveM3UPath(line, baseDir);
-                if (filePath == null) continue;
-                
-                File audioFile = new File(filePath);
-                if (!audioFile.exists()) {
-                    Log.w(TAG, "Audio file not found: " + filePath);
-                    continue;
-                }
-                
-                // Create MusicFiles object from the file
-                MusicFiles song = createMusicFileFromPath(filePath, extInfo);
-                if (song != null) {
-                    importedSongs.add(song);
-                }
-                
-                extInfo = null; // Reset for next track
-            }
-            
-            Log.d(TAG, "Imported " + importedSongs.size() + " songs from M3U URI");
-            return importedSongs;
-            
+            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+            ArrayList<MusicFiles> result = parseM3UReader(reader, baseDir, "M3U URI");
+            reader.close();
+            return result;
         } catch (IOException e) {
             Log.e(TAG, "Error reading M3U from URI", e);
             return null;
-        } finally {
-            if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException e) {
-                    Log.e(TAG, "Error closing reader", e);
-                }
-            }
         }
+    }
+    
+    /**
+     * Common M3U parsing logic - reads from any BufferedReader.
+     */
+    private ArrayList<MusicFiles> parseM3UReader(BufferedReader reader, String baseDir, String source) throws IOException {
+        ArrayList<MusicFiles> importedSongs = new ArrayList<>();
+        String line;
+        String extInfo = null;
+        
+        while ((line = reader.readLine()) != null) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+            
+            if (line.startsWith("#EXTINF:")) {
+                extInfo = line;
+                continue;
+            }
+            if (line.startsWith("#")) continue;
+            
+            String filePath = resolveM3UPath(line, baseDir);
+            if (filePath == null) continue;
+            
+            File audioFile = new File(filePath);
+            if (!audioFile.exists()) {
+                Log.w(TAG, "Audio file not found: " + filePath);
+                continue;
+            }
+            
+            MusicFiles song = createMusicFileFromPath(filePath, extInfo);
+            if (song != null) {
+                importedSongs.add(song);
+            }
+            extInfo = null;
+        }
+        
+        Log.d(TAG, "Imported " + importedSongs.size() + " songs from " + source);
+        return importedSongs;
     }
     
     /**
@@ -644,5 +581,28 @@ public class QueueDatabase extends SQLiteOpenHelper {
         String id = String.valueOf(filePath.hashCode());
         
         return new MusicFiles(filePath, title, artist, album, duration, id);
+    }
+    
+    /**
+     * Quick check if the queue has any songs.
+     * Used for determining if mini-player should be shown on cold start.
+     * @return true if queue has at least one song
+     */
+    public boolean hasQueue() {
+        SQLiteDatabase db = getReadableDatabase();
+        Cursor cursor = null;
+        try {
+            cursor = db.rawQuery("SELECT COUNT(*) FROM " + TABLE_QUEUE, null);
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0) > 0;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking queue", e);
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        return false;
     }
 }

@@ -7,23 +7,4 @@
         <item name="textAllCaps">false</item>
         <item name="android:letterSpacing">0.01</item>
     </style>
-    
-    <!-- Card Style for Albums (Dark theme) -->
-    <style name="AlbumCardStyle">
-        <item name="cardCornerRadius">@dimen/album_card_radius</item>
-        <item name="cardElevation">@dimen/album_card_elevation</item>
-        <item name="cardBackgroundColor">@color/card_background_dark</item>
-    </style>
-    
-    <!-- Now Playing Bar Style -->
-    <style name="NowPlayingBarStyle">
-        <item name="android:background">@color/now_playing_bg</item>
-        <item name="android:elevation">8dp</item>
-    </style>
-    
-    <!-- Artist Icon Background Style -->
-    <style name="ArtistIconStyle">
-        <item name="android:background">@drawable/artist_icon_background</item>
-        <item name="android:padding">12dp</item>
-    </style>
 </resources>
